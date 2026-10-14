@@ -177,6 +177,7 @@ def check_route(db: DB, route: dict, settings: dict, now: datetime) -> tuple[str
         k = key(a["depart_date"], a["return_date"])
         last_alerted[k] = min(float(a["price"]), last_alerted.get(k, float("inf")))
 
+    aviasales_links = {key(q.depart_date, q.return_date): q.link for q in quotes if q.source == "aviasales" and q.link}
     month_now = [q.price for q in best.values()] if route["date_mode"] == "month" else None
     target = float(route["target_price"]) if route.get("target_price") else None
     snapshots, candidates = [], []
@@ -195,6 +196,10 @@ def check_route(db: DB, route: dict, settings: dict, now: datetime) -> tuple[str
                 "normal_price": round(normal, 2) if normal else None, "pct_below": verdict.pct_below,
                 "reasons": verdict.reasons, "source": q.source, "airline": q.airline,
                 "stops": q.stops, "link": q.link,
+                # links de compra: Google Flights sempre (abre com as datas certas) + Aviasales se houver
+                "google_link": q.link if q.source == "google" else google.search_url(
+                    route["origin"], route["destination"], q.depart_date, q.return_date, route["adults"], route["max_stops"]),
+                "aviasales_link": aviasales_links.get(k),
             })
     db.insert("price_snapshots", snapshots)
 
@@ -204,7 +209,8 @@ def check_route(db: DB, route: dict, settings: dict, now: datetime) -> tuple[str
         alert_title, text = notify.alert_message(route, items)
         used = notify.broadcast(db, settings, alert_title, text, notify.app_url(f"#/rota/{rid}"))
         db.insert("alerts", [{
-            "route_id": rid, **{k: v for k, v in it.items() if k != "stops"}, "channels": used,
+            "route_id": rid, "channels": used,
+            **{k: v for k, v in it.items() if k not in ("stops", "google_link", "aviasales_link")},
         } for it in items])
         sent = f", {len(items)} alerta(s) via {', '.join(used) or 'nenhum canal'}"
 

@@ -68,8 +68,10 @@ def alert_message(route: dict, items: list[dict]) -> tuple[str, str]:
                                "Google Flights" if it["source"] == "google" else "Aviasales"] if x]
         lines.append("🏷️ " + " · ".join(details))
         lines.append("✅ " + "; ".join(it["reasons"]))
-        if it.get("link"):
-            lines.append(f"🔗 {it['link']}")
+        if it.get("google_link"):
+            lines.append(f"🛒 Comprar (Google Flights): {it['google_link']}")
+        if it.get("aviasales_link"):
+            lines.append(f"🛒 Comprar (Aviasales): {it['aviasales_link']}")
         lines.append("")
     url = app_url(f"#/rota/{route['id']}")
     if url:

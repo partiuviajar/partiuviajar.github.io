@@ -48,7 +48,8 @@ def _to_quote(item: dict, adults: int) -> Quote:
         airline=item.get("airline"),
         stops=stops,
         duration_min=item.get("duration"),
-        link=f"https://www.aviasales.com{link}" if link else None,
+        # só o caminho da busca (ex.: /search/SAO0312LIS1): link curto que abre a busca com as mesmas datas
+        link=f"https://www.aviasales.com{link.split('?')[0]}" if link else None,
     )
 
 
