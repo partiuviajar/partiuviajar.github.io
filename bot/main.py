@@ -111,13 +111,15 @@ def collect_quotes(db: DB, route: dict, dates: list[tuple[date, date | None]], n
     else:
         picks = dates
 
-    failures = 0
+    failures = empty = 0
     for dep, ret in picks:
         try:
             q = google.cheapest(o, d, dep, ret, adults, max_stops)
             failures = 0
             if q:
                 quotes.append(q)
+            else:
+                empty += 1
         except SourceError as e:
             failures += 1
             if failures == 1:
@@ -126,6 +128,7 @@ def collect_quotes(db: DB, route: dict, dates: list[tuple[date, date | None]], n
                 errors.append("Google Flights pausado nesta rodada após falhas seguidas.")
                 break
         time.sleep(random.uniform(2, 5))
+    print(f"[google] {len(picks)} buscas, {empty} sem voos, {failures} falhas no fim")
     return quotes, errors
 
 
@@ -221,7 +224,12 @@ def check_route(db: DB, route: dict, settings: dict, now: datetime) -> tuple[str
         "last_checked_at": now.isoformat(), "last_error": "; ".join(errors) or None,
     })
     cheapest = min(best.values(), key=lambda q: q.price)
-    return f"{title}: {len(best)} data(s), menor {notify.brl(cheapest.price)}{sent}", bool(errors)
+    by_source = {s: sum(1 for q in quotes if q.source == s) for s in ("google", "aviasales")}
+    line = (f"{title}: {len(best)} data(s) [google {by_source['google']}, aviasales {by_source['aviasales']}], "
+            f"menor {notify.brl(cheapest.price)}{sent}")
+    if errors:
+        line += " | avisos: " + "; ".join(errors)
+    return line, bool(errors)
 
 
 def prune(db: DB, now: datetime):
