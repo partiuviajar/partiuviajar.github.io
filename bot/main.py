@@ -104,7 +104,10 @@ def collect_quotes(db: DB, route: dict, dates: list[tuple[date, date | None]], n
         picks = [(q.depart_date, q.return_date) for q in cheapest_first[: GOOGLE_MONTH_BUDGET // 2]]
         last_check = latest_google_checks(db, route["id"], now)
         rest = sorted((dt for dt in dates if dt not in picks), key=lambda dt: last_check.get(dt[0].isoformat(), ""))
-        picks += rest[: GOOGLE_MONTH_BUDGET - len(picks)]
+        # enquanto houver dias nunca consultados (rota nova), faz mais buscas por rodada para preencher o calendário
+        never = sum(1 for dt in dates if dt[0].isoformat() not in last_check)
+        budget = max(GOOGLE_MONTH_BUDGET, min(16, never + len(picks)))
+        picks += rest[: budget - len(picks)]
     else:
         picks = dates
 
