@@ -184,7 +184,13 @@ def check_route(db: DB, route: dict, settings: dict, now: datetime) -> tuple[str
         last_alerted[k] = min(float(a["price"]), last_alerted.get(k, float("inf")))
 
     aviasales_links = {key(q.depart_date, q.return_date): q.link for q in quotes if q.source == "aviasales" and q.link}
-    month_now = [q.price for q in best.values()] if route["date_mode"] == "month" else None
+    month_now = None
+    if route["date_mode"] == "month":
+        # preço mais recente de cada dia do mês: desta rodada ou, se o dia não foi consultado agora, o último conhecido
+        wanted = {key(a, b) for a, b in dates}
+        latest = {k: prices[-1] for k, prices in history.items() if k in wanted}
+        latest.update({k: q.price for k, q in best.items()})
+        month_now = list(latest.values())
     target = float(route["target_price"]) if route.get("target_price") else None
     snapshots, candidates = [], []
     for k, q in best.items():
