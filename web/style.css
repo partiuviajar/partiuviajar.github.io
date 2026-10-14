@@ -43,6 +43,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -211,7 +212,8 @@ pre.log { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Me
 .ac-list button { display: flex; width: 100%; gap: 10px; align-items: center; text-align: left; border: 0; background: transparent; padding: 10px; border-radius: 8px; cursor: pointer; }
 .ac-list button:hover, .ac-list button:focus { background: var(--card-2); outline: none; }
 .ac-list .code { font-weight: 800; font-size: 13px; background: var(--brand-soft); color: var(--brand); border-radius: 6px; padding: 2px 6px; min-width: 44px; text-align: center; }
-.chosen { margin-top: 6px; font-size: 13px; color: var(--muted); }
+.chosen { margin-top: 6px; font-size: 13px; color: var(--good); }
+.chosen:empty { display: none; }
 .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
 .switch + .switch { border-top: 1px solid var(--line); }
 .switch input { width: 46px; height: 28px; appearance: none; -webkit-appearance: none; background: var(--line); border-radius: 999px; position: relative; cursor: pointer; transition: background .15s; flex: none; }

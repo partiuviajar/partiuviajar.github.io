@@ -180,8 +180,8 @@ async function updateBotStatus() {
 const ROUTES = [
   [/^#\/login$/, viewLogin],
   [/^#\/?$/, viewHome],
-  [/^#\/nova$/, () => viewForm(null)],
-  [/^#\/editar\/([\w-]+)$/, (id) => viewForm(id)],
+  [/^#\/nova$/, viewForm],
+  [/^#\/editar\/([\w-]+)$/, viewForm],
   [/^#\/rota\/([\w-]+)$/, viewRoute],
   [/^#\/alertas$/, viewAlerts],
   [/^#\/config$/, viewSettings],
@@ -472,7 +472,7 @@ async function viewAlerts() {
 // ---------------------------------------------------------------------------
 let form = null;
 
-async function viewForm(id) {
+async function viewForm(id = null) {
   let r = null;
   if (id) {
     r = await q(sb.from("routes").select("*").eq("id", id).maybeSingle());
@@ -558,6 +558,7 @@ function placeField(name, label, placeholder) {
     <span>${label}</span>
     <input class="input" type="text" autocomplete="off" autocapitalize="words" placeholder="${placeholder}" value="${cur ? esc(`${cur.label} (${cur.code})`) : ""}">
     <div class="ac-list" hidden></div>
+    <div class="chosen"></div>
   </div>`;
 }
 
@@ -595,47 +596,67 @@ function setupAutocomplete(wrap) {
   const name = wrap.dataset.place;
   const input = wrap.querySelector("input");
   const list = wrap.querySelector(".ac-list");
-  let timer, seq = 0;
+  const chosen = wrap.querySelector(".chosen");
+  let timer, seq = 0, items = [];
   const close = () => (list.hidden = true);
-  input.addEventListener("focus", () => input.select());
+  const labelOf = (it) => (it.type === "city" ? it.name : it.city_name || it.name);
+  const subOf = (it) => (it.type === "city" ? `todos os aeroportos · ${it.country_name}` : `${it.name} · ${it.country_name}`);
+  const showChosen = () => {
+    const c = form[name];
+    chosen.innerHTML = c ? `✓ <b>${esc(c.label)}</b> (${esc(c.code)})${c.sub ? ` · ${esc(c.sub)}` : ""}` : "";
+  };
+  const pick = (it) => {
+    form[name] = { code: it.code, label: labelOf(it), sub: subOf(it) };
+    input.value = `${labelOf(it)} (${it.code})`;
+    showChosen();
+    close();
+  };
+  showChosen();
+
+  async function search(term) {
+    const my = ++seq;
+    try {
+      const url = `https://autocomplete.travelpayouts.com/places2?term=${encodeURIComponent(term)}&locale=pt&types[]=city&types[]=airport`;
+      const found = (await (await fetch(url)).json()).slice(0, 8);
+      if (my !== seq) return;
+      items = found;
+      list.innerHTML = items.length
+        ? items.map((it, i) => `<button type="button" data-i="${i}"><span class="code">${esc(it.code)}</span><span class="grow"><b>${esc(labelOf(it))}</b><br><span class="muted tiny">${esc(subOf(it))}</span></span></button>`).join("")
+        : `<div class="muted small" style="padding:10px">Nada encontrado. Tente outro nome ou o código de 3 letras (ex.: GRU).</div>`;
+      list.hidden = document.activeElement !== input;
+    } catch { close(); }
+  }
+
+  // pointerdown escolhe antes do campo perder o foco (funciona no celular e no computador)
+  list.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest("button[data-i]"); if (!b) return;
+    e.preventDefault();
+    pick(items[Number(b.dataset.i)]);
+  });
+  input.addEventListener("focus", () => { input.select(); if (items.length && !form[name]) list.hidden = false; });
   input.addEventListener("input", () => {
     form[name] = null;
+    showChosen();
     clearTimeout(timer);
     const term = input.value.trim();
-    if (term.length < 2) { close(); return; }
-    timer = setTimeout(async () => {
-      const my = ++seq;
-      try {
-        const url = `https://autocomplete.travelpayouts.com/places2?term=${encodeURIComponent(term)}&locale=pt&types[]=city&types[]=airport`;
-        const items = (await (await fetch(url)).json()).slice(0, 8);
-        if (my !== seq) return;
-        if (!items.length) { list.innerHTML = `<div class="muted small" style="padding:10px">Nada encontrado. Digite o código de 3 letras (ex.: GRU).</div>`; list.hidden = false; return; }
-        list.innerHTML = items.map((it, i) => {
-          const isCity = it.type === "city";
-          const label = isCity ? it.name : (it.city_name || it.name);
-          const sub = isCity ? `todos os aeroportos · ${it.country_name}` : `${it.name} · ${it.country_name}`;
-          return `<button type="button" data-i="${i}"><span class="code">${esc(it.code)}</span><span class="grow"><b>${esc(label)}</b><br><span class="muted tiny">${esc(sub)}</span></span></button>`;
-        }).join("");
-        list.hidden = false;
-        list.onclick = (e) => {
-          const b = e.target.closest("button[data-i]"); if (!b) return;
-          const it = items[Number(b.dataset.i)];
-          const label = it.type === "city" ? it.name : (it.city_name || it.name);
-          form[name] = { code: it.code, label };
-          input.value = `${label} (${it.code})`;
-          close();
-        };
-      } catch { close(); }
-    }, 250);
+    if (term.length < 2) { items = []; close(); return; }
+    timer = setTimeout(() => search(term), 200);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && items.length && !list.hidden) { e.preventDefault(); pick(items[0]); }
+    if (e.key === "Escape") close();
   });
   input.addEventListener("blur", () => setTimeout(() => {
     close();
+    if (form[name]) return;
+    if (items.length) { pick(items[0]); return; }  // saiu sem escolher: usa a primeira sugestão
     const raw = input.value.trim();
-    if (!form[name] && /^[a-z]{3}$/i.test(raw)) {
+    if (/^[a-z]{3}$/i.test(raw)) {
       form[name] = { code: raw.toUpperCase(), label: raw.toUpperCase() };
-      input.value = `${raw.toUpperCase()} (${raw.toUpperCase()})`;
+      input.value = raw.toUpperCase();
+      showChosen();
     }
-  }, 200));
+  }, 150));
 }
 
 async function saveRoute(e) {
