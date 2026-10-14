@@ -46,7 +46,13 @@ jobs:
           VAPID_SUBJECT: https://github.com/vitorwangg/radar-voos
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python main.py ${{ inputs.force && '--force' || '' }}
+        run: |
+          set -o pipefail
+          if ! python main.py ${{ inputs.force && '--force' || '' }} 2>&1 | tee saida.log; then
+            # mostra o fim do erro como aviso na página da execução
+            echo "::error title=Robô falhou::$(tail -c 1800 saida.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
 
       # O GitHub pausa agendamentos de repositórios sem atividade por 60 dias; isto evita a pausa.
       - uses: liskin/gh-workflow-keepalive@v1
