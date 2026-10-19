@@ -229,3 +229,5 @@ pre.log { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Me
 }
 .login { max-width: 400px; margin: 8vh auto 0; }
 .login .logo { width: 64px; height: 64px; border-radius: 16px; display: block; margin: 0 auto 12px; }
+.cal-month { font-weight: 700; font-size: 13px; text-transform: capitalize; margin: 14px 0 6px; }
+.cal-month:first-child { margin-top: 0; }

@@ -6,7 +6,7 @@ no celular (app/PWA) e no Telegram quando o preço fica abaixo do normal.
 ## Como funciona
 
 - **App** (`web/`): site instalável no celular, publicado de graça no GitHub Pages.
-  Você cadastra até 10 rotas (data fixa ou mês inteiro), vê o calendário de preços,
+  Você cadastra até 10 rotas (data fixa, mês inteiro ou viagem longa), vê o calendário de preços,
   o histórico e os alertas.
 - **Robô** (`bot/`): roda a cada 15 min no GitHub Actions. Cada rota é consultada no
   intervalo escolhido (padrão 3 h) ou na hora, pelo botão "Verificar agora".

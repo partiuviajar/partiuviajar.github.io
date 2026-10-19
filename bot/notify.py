@@ -48,27 +48,54 @@ def route_title(route: dict) -> str:
     return f"{o} → {d}"
 
 
+def leg_title(route: dict, item: dict) -> str | None:
+    """Rótulo do trecho na viagem longa (None nas rotas comuns)."""
+    o = route.get("origin_label") or route["origin"]
+    d = route.get("destination_label") or route["destination"]
+    label = {
+        "out": f"🛫 Só ida ({o} → {d})",
+        "back": f"🛬 Só volta ({d} → {o})",
+        "rt": "🔁 Ida e volta na mesma passagem",
+        "combo": "🧩 Viagem toda com 2 passagens só de ida",
+    }.get(item.get("leg"))
+    if label and item.get("direct_only"):
+        label += " · só voos diretos"
+    return label
+
+
 def alert_message(route: dict, items: list[dict]) -> tuple[str, str]:
     """Monta (título curto, texto completo) para um conjunto de datas baratas da mesma rota."""
-    kind = "ida e volta" if route["trip_type"] == "round_trip" else "só ida"
+    if route["date_mode"] == "long":
+        kind = "viagem longa"
+    else:
+        kind = "ida e volta" if route["trip_type"] == "round_trip" else "só ida"
     pax = f" · {route['adults']} adultos" if route["adults"] > 1 else ""
     best = items[0]
     title = f"✈️ {route_title(route)} por {brl(best['price'])}"
     lines = [f"✈️ *Radar de Voos: preço baixo!*", f"{route_title(route)} · {kind}{pax}", ""]
     for it in items:
+        leg = leg_title(route, it)
+        if leg:
+            lines.append(f"*{leg}*")
         days = fmt_day(it["depart_date"])
         if it.get("return_date"):
             days += f" → {fmt_day(it['return_date'])}"
+            if it.get("leg"):
+                stay = (date.fromisoformat(str(it["return_date"])) - date.fromisoformat(str(it["depart_date"]))).days
+                days += f" · {stay} dias"
         lines.append(f"📅 {days}")
         price_line = f"💰 *{brl(it['price'])}*"
         if it.get("normal_price"):
             price_line += f" (normal ~{brl(it['normal_price'])})"
         lines.append(price_line)
-        details = [x for x in [it.get("airline"), stops_label(it.get("stops")),
-                               "Google Flights" if it["source"] == "google" else "Aviasales"] if x]
+        source = {"google": "Google Flights", "aviasales": "Aviasales"}.get(it.get("source"))
+        details = [x for x in [it.get("airline"), stops_label(it.get("stops")), source] if x]
         lines.append("🏷️ " + " · ".join(details))
         lines.append("✅ " + "; ".join(it["reasons"]))
-        if it.get("google_link"):
+        if it.get("google_link_back"):
+            lines.append(f"🛒 Ida (Google Flights): {it['google_link']}")
+            lines.append(f"🛒 Volta (Google Flights): {it['google_link_back']}")
+        elif it.get("google_link"):
             lines.append(f"🛒 Comprar (Google Flights): {it['google_link']}")
         if it.get("aviasales_link"):
             lines.append(f"🛒 Comprar (Aviasales): {it['aviasales_link']}")

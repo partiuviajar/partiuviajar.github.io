@@ -101,3 +101,25 @@ def fixed_price(origin: str, destination: str, depart: date, ret: date | None,
         if _ok_stops(item, max_stops):
             return _to_quote(item, adults)
     return None
+
+
+def search(origin: str, destination: str, depart_month: date, return_month: date | None = None,
+           adults: int = 1, max_stops: int | None = None) -> list[Quote]:
+    """Todas as passagens em cache com ida no mês (e volta no mês `return_month`, se houver; senão, só ida)."""
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "departure_at": depart_month.strftime("%Y-%m"),
+        "one_way": "false" if return_month else "true",
+    }
+    if return_month:
+        params["return_at"] = return_month.strftime("%Y-%m")
+    if max_stops == 0:
+        params["direct"] = "true"
+    out = []
+    for item in _fetch(params):
+        if _ok_stops(item, max_stops):
+            q = _to_quote(item, adults)
+            if q.depart_date and (q.return_date or not return_month):
+                out.append(q)
+    return out

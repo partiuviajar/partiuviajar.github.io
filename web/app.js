@@ -28,6 +28,7 @@ const todayIso = () => isoOf(new Date());
 const addDays = (iso, n) => { const d = parseDate(iso); d.setDate(d.getDate() + n); return isoOf(d); };
 const daysBetween = (a, b) => Math.round((parseDate(b) - parseDate(a)) / 86400000);
 const fmtDay = (iso) => { const d = parseDate(iso); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} (${WD[d.getDay()]})`; };
+const fmtShort = (iso) => { const d = parseDate(iso); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`; };
 const fmtMonth = (iso) => { const d = parseDate(iso); return `${MONTHS[d.getMonth()]} de ${d.getFullYear()}`; };
 const fmtDateTime = (ts) => new Date(ts).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const isoDaysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
@@ -93,13 +94,40 @@ function tripLabel(r) {
     const dates = r.trip_type === "round_trip" ? `${fmtDay(r.depart_date)} → ${fmtDay(r.return_date)}` : fmtDay(r.depart_date);
     return `${kind} · ${dates}${pax}${stops}`;
   }
+  if (r.date_mode === "long") {
+    const back = r.trip_type === "round_trip" ? ` · volta ${r.min_stay || 1} a ${r.max_stay} dias depois` : "";
+    const direct = r.track_direct ? " · diretos à parte" : "";
+    return `Viagem longa · ida ${fmtShort(r.depart_from)} a ${fmtShort(r.depart_to)}${back}${pax}${stops}${direct}`;
+  }
   const stay = r.trip_type === "round_trip" ? ` · ${r.stay_days} dias de viagem` : "";
   return `${kind} · ${fmtMonth(r.month)} inteiro${stay}${pax}${stops}`;
 }
 
+// Viagem longa: dias de ida e de volta acompanhados (só no futuro)
+function longWindows(r) {
+  const tomorrow = addDays(todayIso(), 1);
+  const outFrom = r.depart_from > tomorrow ? r.depart_from : tomorrow;
+  const w = { outFrom, outTo: r.depart_to };
+  if (r.trip_type === "round_trip" && outFrom <= r.depart_to) {
+    w.backFrom = addDays(outFrom, r.min_stay || 1);
+    w.backTo = addDays(r.depart_to, r.max_stay);
+  }
+  return w;
+}
+const stayOk = (r, dep, ret) => { const n = daysBetween(dep, ret); return n >= (r.min_stay || 1) && n <= r.max_stay; };
+
+function inScopeLong(r, row) {
+  const w = longWindows(r);
+  if (row.leg === "back") return !!w.backFrom && row.depart_date >= w.backFrom && row.depart_date <= w.backTo;
+  if (row.depart_date < w.outFrom || row.depart_date > w.outTo) return false;
+  if (row.leg === "out") return true;
+  return !!row.return_date && stayOk(r, row.depart_date, row.return_date);
+}
+
 // Só considera preços das datas que a rota acompanha hoje (se você editou as datas, ignora as antigas)
 function inScope(r, row) {
-  if (row.depart_date < todayIso()) return false;
+  if (r.date_mode === "long") return inScopeLong(r, row);
+  if (row.leg || row.depart_date < todayIso()) return false;
   if (r.date_mode === "fixed") {
     return row.depart_date === r.depart_date && (r.trip_type === "one_way" ? !row.return_date : row.return_date === r.return_date);
   }
@@ -108,8 +136,9 @@ function inScope(r, row) {
   return row.return_date && daysBetween(row.depart_date, row.return_date) === r.stay_days;
 }
 
-function googleUrl(r, dep, ret) {
-  const text = `Flights from ${r.origin} to ${r.destination} on ${dep}` + (ret ? ` through ${ret}` : " one way") + (r.adults > 1 ? ` for ${r.adults} adults` : "");
+function googleUrl(r, dep, ret, back = false) {
+  const [from, to] = back ? [r.destination, r.origin] : [r.origin, r.destination];
+  const text = `Flights from ${from} to ${to} on ${dep}` + (ret ? ` through ${ret}` : " one way") + (r.adults > 1 ? ` for ${r.adults} adults` : "");
   return `https://www.google.com/travel/flights?q=${encodeURIComponent(text)}&hl=pt-BR&curr=BRL`;
 }
 
@@ -262,9 +291,10 @@ viewLogin.after = () => {
 // Início: lista de rotas
 // ---------------------------------------------------------------------------
 async function viewHome() {
-  const [routes, latest, trend] = await Promise.all([
+  const [routes, latest, totals, trend] = await Promise.all([
     q(sb.from("routes").select("*").order("created_at")),
-    q(sb.from("route_latest").select("route_id,depart_date,return_date,price,normal_price,checked_at").gte("depart_date", todayIso()).limit(1000)),
+    q(sb.from("route_latest").select("route_id,depart_date,return_date,price,normal_price,checked_at").is("leg", null).gte("depart_date", todayIso()).limit(1000)),
+    q(sb.from("route_latest").select("route_id,leg,depart_date,return_date,price,normal_price,checked_at").in("leg", ["rt", "combo"]).eq("direct_only", false).gte("checked_at", isoDaysAgo(2)).limit(1000)),
     q(sb.from("route_trend").select("route_id,checked_at,best_price").gte("checked_at", isoDaysAgo(10)).order("checked_at").limit(1000)),
   ]);
   updateBotStatus();
@@ -277,8 +307,8 @@ async function viewHome() {
       <a class="btn primary" href="#/nova">Cadastrar primeira rota</a></div>`;
   }
   const cards = routes.map((r) => {
-    const rows = latest.filter((x) => x.route_id === r.id && inScope(r, x));
-    const best = rows.reduce((a, b) => (!a || b.price < a.price ? b : a), null);
+    const rows = r.date_mode === "long" ? lastCheck(totals.filter((x) => x.route_id === r.id && inScope(r, x))) : latest.filter((x) => x.route_id === r.id && inScope(r, x));
+    const best = rows.reduce((a, b) => (!a || Number(b.price) < Number(a.price) ? b : a), null);
     const normal = best?.normal_price ?? (r.date_mode === "month" ? median(rows.map((x) => Number(x.price))) : null);
     const lv = best ? level(Number(best.price), normal ? Number(normal) : null, r.threshold_pct) : null;
     const spark = sparkline(trend.filter((t) => t.route_id === r.id).map((t) => Number(t.best_price)));
@@ -293,7 +323,7 @@ async function viewHome() {
       </div>
       <div class="row between wrap" style="margin-top:12px">
         <div>
-          <div class="price-big">${best ? brl(best.price) : "…"} ${best && r.date_mode === "month" ? `<small>em ${esc(when)}</small>` : ""}</div>
+          <div class="price-big">${best ? brl(best.price) : "…"} ${best && r.date_mode !== "fixed" ? `<small>em ${esc(when)}</small>` : ""}</div>
           <div class="muted small">${best ? `normal ~${brl(normal)} · ${ago(best.checked_at)}` : r.active ? "aguardando a primeira verificação" : ""}</div>
         </div>
         ${lv ? `<span class="badge ${lv.cls}">${esc(lv.label)}</span>` : ""}
@@ -314,18 +344,26 @@ let current = null; // dados da rota aberta, usados pelos botões
 async function viewRoute(id) {
   const [route, latestAll, trend, alerts] = await Promise.all([
     q(sb.from("routes").select("*").eq("id", id).maybeSingle()),
-    q(sb.from("route_latest").select("*").eq("route_id", id).gte("depart_date", todayIso()).limit(1000)),
+    q(sb.from("route_latest").select("*").eq("route_id", id).is("leg", null).gte("depart_date", todayIso()).limit(1000)),
     q(sb.from("route_trend").select("checked_at,best_price,normal_price").eq("route_id", id).gte("checked_at", isoDaysAgo(30)).order("checked_at").limit(1000)),
     q(sb.from("alerts").select("*").eq("route_id", id).order("created_at", { ascending: false }).limit(15)),
   ]);
   if (!route) return `<div class="hint warn">Rota não encontrada.</div><p><a class="btn" href="#/">Voltar</a></p>`;
+  if (route.date_mode === "long") {
+    const [legs, totals] = await Promise.all([
+      q(sb.from("route_latest").select("*").eq("route_id", id).in("leg", ["out", "back"]).limit(1000)),
+      q(sb.from("route_latest").select("*").eq("route_id", id).in("leg", ["rt", "combo"]).gte("checked_at", isoDaysAgo(2)).order("price").limit(500)),
+    ]);
+    current = { route, legs, totals, series: "all" };
+  }
   const latest = latestAll.filter((x) => inScope(route, x));
   const best = latest.reduce((a, b) => (!a || Number(b.price) < Number(a.price) ? b : a), null);
   const monthMedian = median(latest.map((x) => Number(x.price)));
   const normalOf = (row) => (row?.normal_price != null ? Number(row.normal_price) : route.date_mode === "month" ? monthMedian : null);
-  current = { route, latest, normalOf };
+  if (route.date_mode === "long") Object.assign(current, { latest, normalOf });
+  else current = { route, latest, normalOf };
 
-  const bestCard = best ? priceCard(route, best, normalOf(best), "Menor preço agora") : `<div class="card"><div class="muted">${route.active ? "Ainda sem preços. O robô verifica em até ~15 min depois de cadastrar." : "Rota pausada."}</div></div>`;
+  const bestCard = route.date_mode === "long" ? "" : best ? priceCard(route, best, normalOf(best), "Menor preço agora") : `<div class="card"><div class="muted">${route.active ? "Ainda sem preços. O robô verifica em até ~15 min depois de cadastrar." : "Rota pausada."}</div></div>`;
   const nextCheck = route.last_checked_at ? new Date(new Date(route.last_checked_at).getTime() + route.check_every_hours * 3600000) : null;
   const requested = route.check_requested_at && (!route.last_checked_at || route.check_requested_at > route.last_checked_at);
 
@@ -340,6 +378,8 @@ async function viewRoute(id) {
     <div style="margin-top:16px">${bestCard}</div>
 
     ${route.date_mode === "month" ? `<h2>Calendário de ${esc(fmtMonth(route.month))}</h2><div class="card">${calendar(route, latest, normalOf, best)}<div id="day-detail"></div></div>` : ""}
+    ${route.date_mode === "long" ? `${route.track_direct ? `<div class="seg" id="series-seg" style="margin-top:16px"><button type="button" class="on" data-v="all">Todos os voos</button><button type="button" data-v="direct">Só diretos</button></div>` : ""}
+      <div id="long-body">${longBody()}</div>` : ""}
 
     <h2>Histórico (30 dias)</h2>
     <div class="card">${lineChart(trend.map((t) => ({ t: new Date(t.checked_at), y: Number(t.best_price), n: t.normal_price != null ? Number(t.normal_price) : null })))}</div>
@@ -389,20 +429,127 @@ viewRoute.after = (id) => {
       location.hash = "#/";
     } catch (err) { toast(friendlyError(err)); }
   });
-  document.querySelector(".cal")?.addEventListener("click", (e) => {
-    const cell = e.target.closest(".day[data-d]"); if (!cell) return;
-    document.querySelectorAll(".cal .day.sel").forEach((x) => x.classList.remove("sel"));
-    cell.classList.add("sel");
-    const row = current.latest.find((x) => x.depart_date === cell.dataset.d);
-    document.getElementById("day-detail").innerHTML = row ? `<div style="margin-top:12px">${priceCard(current.route, row, current.normalOf(row), "Dia selecionado")}</div>` : "";
+  document.getElementById("series-seg")?.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    current.series = b.dataset.v;
+    document.querySelectorAll("#series-seg button").forEach((x) => x.classList.toggle("on", x === b));
+    document.getElementById("long-body").innerHTML = longBody();
+    bindCalendars();
   });
+  bindCalendars();
 };
+
+function bindCalendars() {
+  document.querySelectorAll(".cal").forEach((cal) => cal.addEventListener("click", (e) => {
+    const cell = e.target.closest(".day[data-d]"); if (!cell) return;
+    const group = cal.dataset.g || "";
+    document.querySelectorAll(`.cal[data-g="${group}"] .day.sel`).forEach((x) => x.classList.remove("sel"));
+    cell.classList.add("sel");
+    const detail = document.getElementById(group ? `detail-${group}` : "day-detail");
+    detail.innerHTML = group ? longDayDetail(group, cell.dataset.d) : (() => {
+      const row = current.latest.find((x) => x.depart_date === cell.dataset.d);
+      return row ? `<div style="margin-top:12px">${priceCard(current.route, row, current.normalOf(row), "Dia selecionado")}</div>` : "";
+    })();
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Viagem longa: melhor total + calendários de ida e de volta
+// ---------------------------------------------------------------------------
+const LEG_LABEL = { out: "Só ida", back: "Só volta", rt: "Ida e volta", combo: "Duas passagens só de ida" };
+
+// linhas da última verificação (o melhor total de uma rodada antiga já não vale)
+function lastCheck(rows) {
+  const at = rows.reduce((a, b) => (b.checked_at > a ? b.checked_at : a), "");
+  return rows.filter((x) => x.checked_at === at);
+}
+
+function longData() {
+  const { route, legs, totals, series } = current;
+  const mine = (rows) => rows.filter((x) => !!x.direct_only === (series === "direct") && inScopeLong(route, x));
+  const leg = (name) => {
+    const rows = mine(legs.filter((x) => x.leg === name));
+    const med = median(rows.map((x) => Number(x.price)));
+    return { rows, byDay: Object.fromEntries(rows.map((x) => [x.depart_date, x])), normalOf: (row) => (row?.normal_price != null ? Number(row.normal_price) : med) };
+  };
+  const recent = lastCheck(mine(totals));
+  const cheapest = (rows) => rows.reduce((a, b) => (!a || Number(b.price) < Number(a.price) ? b : a), null);
+  return { out: leg("out"), back: leg("back"), combo: recent.find((x) => x.leg === "combo") || null, rt: cheapest(recent.filter((x) => x.leg === "rt")) };
+}
+
+function longBody() {
+  const { route } = current;
+  const d = longData();
+  const w = longWindows(route);
+  const o = esc(place(route, "origin")), dest = esc(place(route, "destination"));
+  const best = (leg) => leg.rows.reduce((a, b) => (!a || Number(b.price) < Number(a.price) ? b : a), null)?.depart_date;
+  return `
+    ${route.trip_type === "round_trip" ? `<div style="margin-top:16px">${totalsCard(route, d.combo, d.rt)}</div>` : ""}
+    <h2>Ida · ${o} → ${dest} <span class="muted small">(só ida)</span></h2>
+    <div class="card">${w.outFrom <= w.outTo ? calendarRange(w.outFrom, w.outTo, d.out.byDay, d.out.normalOf, best(d.out), "out") : `<div class="muted small">As datas de ida já passaram.</div>`}<div id="detail-out"></div></div>
+    ${w.backFrom ? `<h2>Volta · ${dest} → ${o} <span class="muted small">(só volta)</span></h2>
+    <div class="card">${calendarRange(w.backFrom, w.backTo, d.back.byDay, d.back.normalOf, best(d.back), "back")}<div id="detail-back"></div></div>` : ""}`;
+}
+
+function totalsCard(route, combo, rt) {
+  const options = [combo, rt].filter(Boolean).sort((a, b) => Number(a.price) - Number(b.price));
+  if (!options.length) {
+    return `<div class="card"><div class="muted small">Melhor total da viagem</div><div class="muted" style="margin-top:6px">${route.active ? "Ainda montando: o robô precisa de preços de ida e de volta. Leva algumas rodadas (~15 min cada)." : "Rota pausada."}</div></div>`;
+  }
+  const top = options[0];
+  const lv = level(Number(top.price), top.normal_price != null ? Number(top.normal_price) : null, route.threshold_pct);
+  const line = (row) => {
+    const stay = daysBetween(row.depart_date, row.return_date);
+    const links = row.leg === "combo"
+      ? `<a class="btn sm" href="${esc(googleUrl(route, row.depart_date, null))}" target="_blank" rel="noopener">Ida no Google ↗</a>
+         <a class="btn sm" href="${esc(googleUrl(route, row.return_date, null, true))}" target="_blank" rel="noopener">Volta no Google ↗</a>
+         <a class="btn sm" href="${esc(googleUrl(route, row.depart_date, row.return_date))}" target="_blank" rel="noopener">Comparar com ida e volta ↗</a>`
+      : `<a class="btn sm" href="${esc(row.source === "google" && row.link ? row.link : googleUrl(route, row.depart_date, row.return_date))}" target="_blank" rel="noopener">Ver no Google Flights ↗</a>
+         ${row.source === "aviasales" && row.link ? `<a class="btn sm" href="${esc(row.link)}" target="_blank" rel="noopener">Aviasales ↗</a>` : ""}`;
+    return `<div class="item"><div class="grow">
+      <div class="row between"><b>${esc(LEG_LABEL[row.leg])}</b><b>${brl(row.price)}</b></div>
+      <div class="small">📅 ${esc(fmtDay(row.depart_date))} → ${esc(fmtDay(row.return_date))} · ${stay} dias</div>
+      <div class="muted small">${esc([row.airline, stopsLabel(row.stops)].filter(Boolean).join(" · "))}</div>
+      <div class="fab-row" style="margin-top:8px">${links}</div>
+    </div></div>`;
+  };
+  return `<div class="card">
+    <div class="muted small">Melhor total da viagem agora</div>
+    <div class="row between wrap" style="margin-top:4px">
+      <div class="price-big">${brl(top.price)}</div>
+      <span class="badge ${lv.cls}">${esc(lv.label)}</span>
+    </div>
+    <div class="list" style="margin-top:10px">${options.map(line).join("")}</div>
+    <div class="muted tiny" style="margin-top:8px">Duas passagens só de ida podem ser de companhias diferentes. A passagem de ida e volta só é consultada pelo robô em viagens de até 30 dias; acima disso, toque em “Comparar com ida e volta”. ${ago(top.checked_at)}.</div>
+  </div>`;
+}
+
+// Ao tocar num dia: o preço do trecho e o melhor par para ele (volta para uma ida, ou ida para uma volta)
+function longDayDetail(group, iso) {
+  const { route } = current;
+  const d = longData();
+  const leg = d[group];
+  const row = leg.byDay[iso];
+  if (!row) return "";
+  let pair = "";
+  if (route.trip_type === "round_trip") {
+    const other = group === "out" ? d.back : d.out;
+    const fits = other.rows.filter((x) => (group === "out" ? stayOk(route, iso, x.depart_date) : stayOk(route, x.depart_date, iso)));
+    const best = fits.reduce((a, b) => (!a || Number(b.price) < Number(a.price) ? b : a), null);
+    if (best) {
+      const [dep, ret] = group === "out" ? [iso, best.depart_date] : [best.depart_date, iso];
+      pair = `<div class="hint" style="margin-top:8px">Melhor ${group === "out" ? "volta para esta ida" : "ida para esta volta"}: <b>${brl(best.price)}</b> em ${esc(fmtDay(best.depart_date))}.<br>
+        Total com duas passagens só de ida: <b>${brl(Number(row.price) + Number(best.price))}</b> · ${daysBetween(dep, ret)} dias de viagem.</div>`;
+    }
+  }
+  return `<div style="margin-top:12px">${priceCard(route, row, leg.normalOf(row), group === "out" ? "Ida selecionada (só ida)" : "Volta selecionada (só volta)")}${pair}</div>`;
+}
 
 function priceCard(route, row, normal, title) {
   const lv = level(Number(row.price), normal, route.threshold_pct);
   const dates = row.return_date ? `${fmtDay(row.depart_date)} → ${fmtDay(row.return_date)}` : fmtDay(row.depart_date);
   const details = [row.airline, stopsLabel(row.stops), sourceLabel(row.source)].filter(Boolean).join(" · ");
-  const gLink = row.source === "google" && row.link ? row.link : googleUrl(route, row.depart_date, row.return_date);
+  const gLink = row.source === "google" && row.link ? row.link : googleUrl(route, row.depart_date, row.return_date, row.leg === "back");
   const aLink = row.source === "aviasales" && row.link ? row.link : null;
   return `<div class="card">
     <div class="muted small">${esc(title)}</div>
@@ -421,21 +568,31 @@ function priceCard(route, row, normal, title) {
 
 function calendar(route, latest, normalOf, best) {
   const first = parseDate(route.month);
-  const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-  const byDay = Object.fromEntries(latest.map((x) => [x.depart_date, x]));
+  const last = isoOf(new Date(first.getFullYear(), first.getMonth() + 1, 0));
+  return calendarRange(route.month, last, Object.fromEntries(latest.map((x) => [x.depart_date, x])), normalOf, best?.depart_date);
+}
+
+// Calendário de um intervalo de datas, um bloco por mês. group separa os calendários da mesma tela.
+function calendarRange(fromIso, toIso, byDay, normalOf, bestIso, group = "") {
   const today = todayIso();
-  let html = WD.map((w) => `<div class="wd">${w}</div>`).join("");
-  html += `<div></div>`.repeat(first.getDay());
-  for (let d = 1; d <= days; d++) {
-    const iso = isoOf(new Date(first.getFullYear(), first.getMonth(), d));
-    const row = byDay[iso];
-    if (iso <= today) { html += `<div class="day past"><span class="n">${d}</span></div>`; continue; }
-    if (!row) { html += `<div class="day none"><span class="n">${d}</span><span class="p">–</span></div>`; continue; }
-    const p = pct(Number(row.price), normalOf(row));
-    const cls = p == null ? "lvl-mid" : p >= 5 ? "lvl-good" : p > -8 ? "lvl-mid" : p > -20 ? "lvl-warn" : "lvl-bad";
-    html += `<button type="button" class="day ${cls} ${best && best.depart_date === iso ? "best" : ""}" data-d="${iso}"><span class="n">${d}</span><span class="p">${compactBrl(row.price)}</span></button>`;
+  const end = parseDate(toIso);
+  const multi = fromIso.slice(0, 7) !== toIso.slice(0, 7);
+  let out = "";
+  for (let cur = parseDate(fromIso.slice(0, 8) + "01"); cur <= end; cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)) {
+    const y = cur.getFullYear(), m = cur.getMonth();
+    let html = WD.map((w) => `<div class="wd">${w}</div>`).join("") + `<div></div>`.repeat(cur.getDay());
+    for (let d = 1; d <= new Date(y, m + 1, 0).getDate(); d++) {
+      const iso = isoOf(new Date(y, m, d));
+      const row = byDay[iso];
+      if (iso <= today || iso < fromIso || iso > toIso) { html += `<div class="day past"><span class="n">${d}</span></div>`; continue; }
+      if (!row) { html += `<div class="day none"><span class="n">${d}</span><span class="p">–</span></div>`; continue; }
+      const p = pct(Number(row.price), normalOf(row));
+      const cls = p == null ? "lvl-mid" : p >= 5 ? "lvl-good" : p > -8 ? "lvl-mid" : p > -20 ? "lvl-warn" : "lvl-bad";
+      html += `<button type="button" class="day ${cls} ${bestIso === iso ? "best" : ""}" data-d="${iso}"><span class="n">${d}</span><span class="p">${compactBrl(row.price)}</span></button>`;
+    }
+    out += `${multi ? `<div class="cal-month">${MONTHS[m]} de ${y}</div>` : ""}<div class="cal" data-g="${group}">${html}</div>`;
   }
-  return `<div class="cal">${html}</div>
+  return `${out}
     <div class="legend" style="margin-top:10px"><span>Toque num dia para ver detalhes.</span><span>Verde = abaixo do normal · laranja/vermelho = acima.</span></div>`;
 }
 
@@ -447,7 +604,7 @@ function alertItem(a, withRoute = false) {
     <div style="font-size:22px">🔥</div>
     <div class="grow">
       <div class="row between"><b>${title}${brl(a.price)}</b><span class="muted tiny">${ago(a.created_at)}</span></div>
-      <div class="small">${esc(dates)}${a.normal_price ? ` · normal ~${brl(a.normal_price)}` : ""}</div>
+      <div class="small">${a.leg ? `${esc(LEG_LABEL[a.leg])}${a.direct_only ? " (direto)" : ""} · ` : ""}${esc(dates)}${a.normal_price ? ` · normal ~${brl(a.normal_price)}` : ""}</div>
       <div class="muted small">${esc((a.reasons || []).join("; "))}</div>
       <div class="row wrap tiny muted" style="gap:8px;margin-top:4px">
         ${a.link ? `<a href="${esc(a.link)}" target="_blank" rel="noopener">abrir oferta ↗</a>` : ""}
@@ -487,6 +644,7 @@ async function viewForm(id = null) {
     trip_type: r?.trip_type || "round_trip",
     date_mode: r?.date_mode || "fixed",
   };
+  const nextMonthEnd = (() => { const d = parseDate(nextMonth); return isoOf(new Date(d.getFullYear(), d.getMonth() + 1, 0)); })();
   const v = (x, d = "") => esc(x ?? d);
   return `
     <p><a href="${id ? `#/rota/${id}` : "#/"}" class="small">← Voltar</a></p>
@@ -502,7 +660,7 @@ async function viewForm(id = null) {
         <div class="seg" data-seg="trip_type"><button type="button" data-v="round_trip">Ida e volta</button><button type="button" data-v="one_way">Só ida</button></div>
         <div style="height:14px"></div>
         <span class="label">Datas</span>
-        <div class="seg" data-seg="date_mode"><button type="button" data-v="fixed">Data fixa</button><button type="button" data-v="month">Mês inteiro (data aberta)</button></div>
+        <div class="seg" data-seg="date_mode"><button type="button" data-v="fixed">Data fixa</button><button type="button" data-v="month">Mês inteiro</button><button type="button" data-v="long">Viagem longa</button></div>
 
         <div data-show="fixed" style="margin-top:14px">
           <div class="grid2">
@@ -516,6 +674,18 @@ async function viewForm(id = null) {
             <label class="field" data-show="round_trip"><span>Dias de viagem</span><input class="input" type="number" name="stay_days" min="1" max="60" inputmode="numeric" value="${v(r?.stay_days, 7)}"></label>
           </div>
           <p class="muted small" style="margin:10px 0 0">O robô acompanha todos os dias do mês e te avisa quais estão mais baratos.</p>
+        </div>
+        <div data-show="long" style="margin-top:14px">
+          <div class="grid2">
+            <label class="field"><span>Ida a partir de</span><input class="input" type="date" name="depart_from" min="${todayIso()}" value="${v(r?.depart_from || nextMonth)}"></label>
+            <label class="field"><span>Ida até</span><input class="input" type="date" name="depart_to" min="${todayIso()}" value="${v(r?.depart_to || nextMonthEnd)}"></label>
+          </div>
+          <div class="grid2" data-show="round_trip">
+            <label class="field"><span>Volta no mínimo (dias depois da ida)</span><input class="input" type="number" name="min_stay" min="1" max="330" inputmode="numeric" value="${v(r?.min_stay, 30)}"></label>
+            <label class="field"><span>Volta no máximo (dias depois da ida)</span><input class="input" type="number" name="max_stay" min="1" max="330" inputmode="numeric" value="${v(r?.max_stay, 90)}"></label>
+          </div>
+          <label class="switch" style="margin-top:6px"><span>Acompanhar também só voos diretos, separado</span><input type="checkbox" name="track_direct" ${r?.track_direct ? "checked" : ""}></label>
+          <p class="muted small" style="margin:6px 0 0">O robô acompanha a ida e a volta separadas (duas passagens só de ida, podem ser de companhias diferentes) e soma o melhor total. Em viagens de até 30 dias, também compara com a passagem de ida e volta. Na Europa (Schengen), brasileiro pode ficar até 90 dias a cada 180.</p>
         </div>
       </div>
 
@@ -676,6 +846,7 @@ async function saveRoute(e) {
     destination: form.destination.code, destination_label: form.destination.label,
     trip_type: form.trip_type, date_mode: form.date_mode,
     depart_date: null, return_date: null, month: null, stay_days: null,
+    depart_from: null, depart_to: null, min_stay: null, max_stay: null, track_direct: false,
     adults: Number(el.querySelector("output[name=adults]").textContent),
     max_stops: el.max_stops.value === "" ? null : Number(el.max_stops.value),
     threshold_pct: Number(el.threshold_pct.value),
@@ -690,6 +861,20 @@ async function saveRoute(e) {
     if (rt) {
       row.return_date = el.return_date.value;
       if (!row.return_date || row.return_date <= row.depart_date) return fail("A volta precisa ser depois da ida.");
+    }
+  } else if (form.date_mode === "long") {
+    row.depart_from = el.depart_from.value;
+    row.depart_to = el.depart_to.value;
+    if (!row.depart_from || row.depart_from <= today) return fail("A ida precisa começar a partir de amanhã.");
+    if (!row.depart_to || row.depart_to < row.depart_from) return fail("O último dia da ida precisa ser depois do primeiro.");
+    if (daysBetween(row.depart_from, row.depart_to) > 62) return fail("A janela de ida pode ter no máximo 2 meses.");
+    row.track_direct = el.track_direct.checked && row.max_stops !== 0;
+    if (rt) {
+      row.min_stay = Number(el.min_stay.value);
+      row.max_stay = Number(el.max_stay.value);
+      if (!(row.max_stay >= 1 && row.max_stay <= 330)) return fail("Volta no máximo: entre 1 e 330 dias.");
+      if (!(row.min_stay >= 1 && row.min_stay <= row.max_stay)) return fail("O mínimo de dias precisa ser menor que o máximo.");
+      if (row.max_stay - row.min_stay > 120) return fail("Entre o mínimo e o máximo de dias cabem no máximo 120 dias.");
     }
   } else {
     if (!el.month.value) return fail("Escolha o mês da viagem.");
@@ -707,7 +892,7 @@ async function saveRoute(e) {
     let id = form.id;
     if (id) {
       const o = form.original;
-      const searchChanged = ["origin", "destination", "trip_type", "date_mode", "depart_date", "return_date", "month", "stay_days", "adults", "max_stops"]
+      const searchChanged = ["origin", "destination", "trip_type", "date_mode", "depart_date", "return_date", "month", "stay_days", "depart_from", "depart_to", "min_stay", "max_stay", "track_direct", "adults", "max_stops"]
         .some((k) => String(o[k] ?? "") !== String(row[k] ?? ""));
       await q(sb.from("routes").update(row).eq("id", id));
       if (searchChanged) {

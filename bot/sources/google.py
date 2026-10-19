@@ -80,31 +80,50 @@ def _parse(html: str) -> list[_Result]:
     return out
 
 
-def cheapest(origin: str, destination: str, depart: date, ret: date | None,
-             adults: int = 1, max_stops: int | None = None, retries: int = 2) -> Quote | None:
-    """Menor preço do Google Flights para uma combinação de datas. None se não houver voos."""
-    q = build_query(origin, destination, depart, ret, adults, max_stops)
+def _results(q, retries: int) -> list[_Result]:
     last_err = None
     for attempt in range(retries + 1):
         try:
-            results = _parse(fetch_flights_html(q))
-            break
+            return _parse(fetch_flights_html(q))
         except Exception as e:  # bloqueio, rede, mudança no site
             last_err = e
             time.sleep(4 * (attempt + 1))
-    else:
-        raise SourceError(f"Google Flights falhou: {type(last_err).__name__}: {str(last_err)[:150]}")
+    raise SourceError(f"Google Flights falhou: {type(last_err).__name__}: {str(last_err)[:150]}")
 
-    if not results:
-        return None
-    best = min(results, key=lambda r: r.price)
+
+def _quote(r: _Result, q, depart: date, ret: date | None) -> Quote:
     return Quote(
         source="google",
         depart_date=depart,
         return_date=ret,
-        price=float(best.price),
-        airline=", ".join(best.airlines[:2]) or None,
-        stops=best.stops,
-        duration_min=best.duration_min or None,
+        price=float(r.price),
+        airline=", ".join(r.airlines[:2]) or None,
+        stops=r.stops,
+        duration_min=r.duration_min or None,
         link=_url(q),
     )
+
+
+def cheapest(origin: str, destination: str, depart: date, ret: date | None,
+             adults: int = 1, max_stops: int | None = None, retries: int = 2) -> Quote | None:
+    """Menor preço do Google Flights para uma combinação de datas. None se não houver voos."""
+    q = build_query(origin, destination, depart, ret, adults, max_stops)
+    results = _results(q, retries)
+    if not results:
+        return None
+    return _quote(min(results, key=lambda r: r.price), q, depart, ret)
+
+
+def options(origin: str, destination: str, depart: date, ret: date | None,
+            adults: int = 1, max_stops: int | None = None, retries: int = 2) -> list[Quote]:
+    """Numa busca só: o menor preço geral e, se for outro voo, o menor preço sem escalas."""
+    q = build_query(origin, destination, depart, ret, adults, max_stops)
+    results = _results(q, retries)
+    if not results:
+        return []
+    best = min(results, key=lambda r: r.price)
+    out = [_quote(best, q, depart, ret)]
+    direct = [r for r in results if r.stops == 0]
+    if direct and best.stops != 0:
+        out.append(_quote(min(direct, key=lambda r: r.price), q, depart, ret))
+    return out
