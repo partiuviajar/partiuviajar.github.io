@@ -54,7 +54,7 @@ function toast(msg, ms = 3200) {
 
 function friendlyError(error) {
   const m = error?.message || String(error);
-  if (/Limite de 3 rotas/.test(m)) return "Você já tem 3 rotas ativas. Pause ou apague uma antes.";
+  if (/Limite de \d+ rotas/.test(m)) return `Você já tem ${MAX_ROUTES} rotas ativas. Pause ou apague uma antes.`;
   if (/row-level security|permission denied/i.test(m)) return "Este e-mail não tem permissão para usar o app. Entre com o e-mail do dono.";
   if (/Invalid login credentials/i.test(m)) return "E-mail ou senha incorretos.";
   if (/already registered/i.test(m)) return "Esse e-mail já tem conta. Use “Entrar”.";

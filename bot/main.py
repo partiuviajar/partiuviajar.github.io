@@ -23,6 +23,7 @@ from sources import Quote, SourceError, aviasales, google
 TZ = ZoneInfo("America/Sao_Paulo")
 GOOGLE_MONTH_BUDGET = int(os.environ.get("GOOGLE_MONTH_BUDGET", "8"))  # buscas no Google por rota "mês inteiro"
 MAX_DATES_PER_ALERT = 3
+RUN_TIME_BUDGET_S = 18 * 60  # não começa rota nova depois disso
 
 
 def parse_ts(value: str | None) -> datetime | None:
@@ -245,6 +246,7 @@ def prune(db: DB, now: datetime):
 
 
 def main():
+    started = time.monotonic()
     db = DB()
     now = datetime.now(timezone.utc)
     settings = (db.select("settings", {"id": "eq.1"}) or [{}])[0]
@@ -274,7 +276,13 @@ def main():
         db.update("settings", {"id": "eq.1"}, {"test_done_at": now.isoformat()})
         summaries.append(f"Teste enviado por: {', '.join(used) or 'nenhum canal (verifique a configuração)'}")
 
-    for route in due:
+    for i, route in enumerate(due):
+        # o GitHub encerra o robô em 25 min; o que sobrar fica para a próxima rodada (15 min depois)
+        if time.monotonic() - started > RUN_TIME_BUDGET_S:
+            line = f"{len(due) - i} rota(s) ficaram para a próxima rodada (tempo esgotado)."
+            print(line)
+            summaries.append(line)
+            break
         try:
             line, had_errors = check_route(db, route, settings, now)
             if had_errors:

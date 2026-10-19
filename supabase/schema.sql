@@ -19,7 +19,7 @@ language sql stable security definer set search_path = '' as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Rotas monitoradas (no máximo 3 ativas)
+-- Rotas monitoradas (no máximo 10 ativas)
 -- ---------------------------------------------------------------------------
 create table if not exists public.routes (
   id uuid primary key default gen_random_uuid(),
@@ -54,8 +54,8 @@ language plpgsql as $$
 begin
   if new.active and (
     select count(*) from public.routes where active and id <> new.id
-  ) >= 3 then
-    raise exception 'Limite de 3 rotas ativas atingido. Pause ou apague uma rota antes.';
+  ) >= 10 then
+    raise exception 'Limite de 10 rotas ativas atingido. Pause ou apague uma rota antes.';
   end if;
   return new;
 end $$;
