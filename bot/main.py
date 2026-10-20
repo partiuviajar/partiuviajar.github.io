@@ -222,8 +222,8 @@ def check_route(db: DB, route: dict, settings: dict, now: datetime) -> tuple[str
     sent = ""
     if candidates:
         items = sorted(candidates, key=lambda c: c["price"])[:MAX_DATES_PER_ALERT]
-        alert_title, text = notify.alert_message(route, items)
-        used = notify.broadcast(db, settings, alert_title, text, notify.app_url(f"#/rota/{rid}"))
+        alert_title, messages = notify.alert_messages(route, items)
+        used = notify.broadcast(db, settings, alert_title, messages, notify.app_url(f"#/rota/{rid}"))
         db.insert("alerts", [{
             "route_id": rid, "channels": used,
             **{k: v for k, v in it.items() if k not in ("stops", "google_link", "aviasales_link")},
@@ -254,7 +254,7 @@ LONG_RT_PICKS = 4             # pares de ida e volta conferidos no Google por ro
 LONG_HISTORY_DAYS = 15
 LEG_FRESH = timedelta(hours=48)  # preço de um trecho vale para montar o total por até 48 h
 MAX_RT_SNAPSHOTS = 30         # guarda só os pares de ida e volta mais baratos de cada rodada
-MAX_LONG_ALERT_ITEMS = 4
+MAX_LONG_ALERT_ITEMS = 3
 RT_MAX_STAY = 30              # Google e Aviasales só mostram ida e volta na mesma passagem para viagens de até ~30 dias
 
 
@@ -544,8 +544,8 @@ def check_long_route(db: DB, route: dict, settings: dict, now: datetime) -> tupl
         # primeiro o preço da viagem toda, depois os trechos sozinhos
         order = {"combo": 0, "rt": 1, "out": 2, "back": 3}
         items = sorted(candidates, key=lambda c: (order[c["leg"]], c["price"]))[:MAX_LONG_ALERT_ITEMS]
-        alert_title, text = notify.alert_message(route, items)
-        used = notify.broadcast(db, settings, alert_title, text, notify.app_url(f"#/rota/{rid}"))
+        alert_title, messages = notify.alert_messages(route, items)
+        used = notify.broadcast(db, settings, alert_title, messages, notify.app_url(f"#/rota/{rid}"))
         db.insert("alerts", [{
             "route_id": rid, "channels": used,
             **{k: v for k, v in it.items() if k not in ("stops", "google_link", "google_link_back", "aviasales_link")},

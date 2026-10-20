@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from datetime import date
 
 import requests
@@ -63,7 +64,8 @@ def leg_title(route: dict, item: dict) -> str | None:
     return label
 
 
-MAX_MESSAGE_CHARS = 900  # o CallMeBot manda o texto dentro do link; texto longo chega cortado no WhatsApp
+MAX_MESSAGES_PER_ALERT = 3   # uma mensagem por passagem; mais que isso o CallMeBot pode bloquear
+PAUSE_BETWEEN_MESSAGES = 4    # segundos entre mensagens do mesmo alerta
 
 
 def price_text(route: dict, price: float) -> str:
@@ -72,32 +74,23 @@ def price_text(route: dict, price: float) -> str:
     return f"*{brl(price)}*" + (f" · {brl(price / adults)}/pessoa" if adults > 1 else "")
 
 
-def alert_message(route: dict, items: list[dict]) -> tuple[str, str]:
-    """Monta (título curto, texto completo) para um conjunto de datas baratas da mesma rota.
+def alert_messages(route: dict, items: list[dict]) -> tuple[str, list[str]]:
+    """Monta (título curto, mensagens): uma mensagem curta por passagem, cada uma com o próprio link de compra.
 
-    Mensagem compacta: 3 linhas por data, um único link de compra (o da melhor opção) e o link do app.
+    Mensagens pequenas não são cortadas pelo CallMeBot (que manda o texto dentro do link).
     """
     if route["date_mode"] == "long":
         kind = "viagem longa"
     else:
         kind = "ida e volta" if route["trip_type"] == "round_trip" else "só ida"
     pax = f" · {route['adults']} adultos" if route["adults"] > 1 else ""
-    best = items[0]
-    title = f"✈️ {route_title(route)} por {brl(best['price'])}"
-    head = [f"✈️ *Radar de Voos: preço baixo!*", f"{route_title(route)} · {kind}{pax}", ""]
-
-    tail = []
-    if best.get("google_link_back"):
-        tail += [f"🛒 Ida: {best['google_link']}", f"🛒 Volta: {best['google_link_back']}"]
-    elif best.get("google_link"):
-        tail.append(f"🛒 Comprar a 1ª opção: {best['google_link']}")
+    items = items[:MAX_MESSAGES_PER_ALERT]
+    title = f"✈️ {route_title(route)} por {brl(items[0]['price'])}"
     url = app_url(f"#/rota/{route['id']}")
-    if url:
-        tail.append(f"📊 Ver tudo no app: {url}")
-
-    blocks = []
-    for it in items:
-        lines = []
+    messages = []
+    for i, it in enumerate(items, 1):
+        count = f" ({i}/{len(items)})" if len(items) > 1 else ""
+        lines = [f"✈️ *Preço baixo: {route_title(route)}*{count}", f"{kind}{pax}"]
         leg = leg_title(route, it)
         if leg:
             lines.append(f"*{leg}*")
@@ -114,16 +107,14 @@ def alert_message(route: dict, items: list[dict]) -> tuple[str, str]:
         lines.append(price_line)
         details = [x for x in [it.get("airline"), stops_label(it.get("stops"))] if x]
         lines.append("✅ " + " · ".join(details + ["; ".join(it["reasons"])]))
-        blocks.append("\n".join(lines))
-
-    # se não couber, manda menos datas (e avisa quantas ficaram no app)
-    while True:
-        extra = len(items) - len(blocks)
-        more = [f"➕ mais {extra} data(s) no app", ""] if extra else []
-        text = "\n".join(head + ["\n\n".join(blocks), ""] + more + tail).strip()
-        if len(text) <= MAX_MESSAGE_CHARS or len(blocks) == 1:
-            return title, text
-        blocks.pop()
+        if it.get("google_link_back"):
+            lines += [f"🛒 Ida: {it['google_link']}", f"🛒 Volta: {it['google_link_back']}"]
+        elif it.get("google_link"):
+            lines.append(f"🛒 Comprar: {it['google_link']}")
+        if i == len(items) and url:
+            lines.append(f"📊 Ver tudo no app: {url}")
+        messages.append("\n".join(lines))
+    return title, messages
 
 
 def send_whatsapp(text: str) -> bool:
@@ -193,15 +184,27 @@ def send_push(db, title: str, body: str, url: str) -> bool:
     return sent
 
 
-def broadcast(db, settings: dict, title: str, text: str, url: str = "") -> list[str]:
-    """Envia para todos os canais ligados. Devolve os canais que funcionaram."""
+def send_all(send, messages: list[str]) -> bool:
+    """Envia várias mensagens em sequência, com pausa entre elas. True se ao menos uma chegou."""
+    ok = False
+    for i, text in enumerate(messages):
+        if i:
+            time.sleep(PAUSE_BETWEEN_MESSAGES)
+        ok = send(text) or ok
+    return ok
+
+
+def broadcast(db, settings: dict, title: str, text: str | list[str], url: str = "") -> list[str]:
+    """Envia para todos os canais ligados (uma ou várias mensagens). Devolve os canais que funcionaram."""
+    messages = [text] if isinstance(text, str) else text
     used = []
-    if settings.get("notify_whatsapp", True) and send_whatsapp(text):
+    if settings.get("notify_whatsapp", True) and send_all(send_whatsapp, messages):
         used.append("whatsapp")
-    if settings.get("notify_telegram", True) and send_telegram(text):
+    if settings.get("notify_telegram", True) and send_all(send_telegram, messages):
         used.append("telegram")
     if settings.get("notify_push", True):
-        body = text.replace("*", "").split("\n", 2)[-1]
+        # notificação do app: uma só, com a primeira passagem
+        body = messages[0].replace("*", "").split("\n", 1)[-1]
         if send_push(db, title, body, url):
             used.append("push")
     return used
