@@ -63,8 +63,20 @@ def leg_title(route: dict, item: dict) -> str | None:
     return label
 
 
+MAX_MESSAGE_CHARS = 900  # o CallMeBot manda o texto dentro do link; texto longo chega cortado no WhatsApp
+
+
+def price_text(route: dict, price: float) -> str:
+    """Preço total e, com mais de 1 adulto, por pessoa."""
+    adults = route.get("adults") or 1
+    return f"*{brl(price)}*" + (f" · {brl(price / adults)}/pessoa" if adults > 1 else "")
+
+
 def alert_message(route: dict, items: list[dict]) -> tuple[str, str]:
-    """Monta (título curto, texto completo) para um conjunto de datas baratas da mesma rota."""
+    """Monta (título curto, texto completo) para um conjunto de datas baratas da mesma rota.
+
+    Mensagem compacta: 3 linhas por data, um único link de compra (o da melhor opção) e o link do app.
+    """
     if route["date_mode"] == "long":
         kind = "viagem longa"
     else:
@@ -72,8 +84,20 @@ def alert_message(route: dict, items: list[dict]) -> tuple[str, str]:
     pax = f" · {route['adults']} adultos" if route["adults"] > 1 else ""
     best = items[0]
     title = f"✈️ {route_title(route)} por {brl(best['price'])}"
-    lines = [f"✈️ *Radar de Voos: preço baixo!*", f"{route_title(route)} · {kind}{pax}", ""]
+    head = [f"✈️ *Radar de Voos: preço baixo!*", f"{route_title(route)} · {kind}{pax}", ""]
+
+    tail = []
+    if best.get("google_link_back"):
+        tail += [f"🛒 Ida: {best['google_link']}", f"🛒 Volta: {best['google_link_back']}"]
+    elif best.get("google_link"):
+        tail.append(f"🛒 Comprar a 1ª opção: {best['google_link']}")
+    url = app_url(f"#/rota/{route['id']}")
+    if url:
+        tail.append(f"📊 Ver tudo no app: {url}")
+
+    blocks = []
     for it in items:
+        lines = []
         leg = leg_title(route, it)
         if leg:
             lines.append(f"*{leg}*")
@@ -84,26 +108,22 @@ def alert_message(route: dict, items: list[dict]) -> tuple[str, str]:
                 stay = (date.fromisoformat(str(it["return_date"])) - date.fromisoformat(str(it["depart_date"]))).days
                 days += f" · {stay} dias"
         lines.append(f"📅 {days}")
-        price_line = f"💰 *{brl(it['price'])}*"
+        price_line = f"💰 {price_text(route, it['price'])}"
         if it.get("normal_price"):
             price_line += f" (normal ~{brl(it['normal_price'])})"
         lines.append(price_line)
-        source = {"google": "Google Flights", "aviasales": "Aviasales"}.get(it.get("source"))
-        details = [x for x in [it.get("airline"), stops_label(it.get("stops")), source] if x]
-        lines.append("🏷️ " + " · ".join(details))
-        lines.append("✅ " + "; ".join(it["reasons"]))
-        if it.get("google_link_back"):
-            lines.append(f"🛒 Ida (Google Flights): {it['google_link']}")
-            lines.append(f"🛒 Volta (Google Flights): {it['google_link_back']}")
-        elif it.get("google_link"):
-            lines.append(f"🛒 Comprar (Google Flights): {it['google_link']}")
-        if it.get("aviasales_link"):
-            lines.append(f"🛒 Comprar (Aviasales): {it['aviasales_link']}")
-        lines.append("")
-    url = app_url(f"#/rota/{route['id']}")
-    if url:
-        lines.append(f"📊 Ver no app: {url}")
-    return title, "\n".join(lines).strip()
+        details = [x for x in [it.get("airline"), stops_label(it.get("stops"))] if x]
+        lines.append("✅ " + " · ".join(details + ["; ".join(it["reasons"])]))
+        blocks.append("\n".join(lines))
+
+    # se não couber, manda menos datas (e avisa quantas ficaram no app)
+    while True:
+        extra = len(items) - len(blocks)
+        more = [f"➕ mais {extra} data(s) no app", ""] if extra else []
+        text = "\n".join(head + ["\n\n".join(blocks), ""] + more + tail).strip()
+        if len(text) <= MAX_MESSAGE_CHARS or len(blocks) == 1:
+            return title, text
+        blocks.pop()
 
 
 def send_whatsapp(text: str) -> bool:
