@@ -882,7 +882,7 @@ async function viewDestination(code) {
       <p class="muted tiny">Ordenados pela fama (em quantas Wikipedias aparecem). Fotos: Wikimedia Commons.</p>`
       : `<div class="card muted small">${d.attractions_at ? "Não encontramos pontos turísticos cadastrados aqui." : "Preparando a lista… o robô junta os pontos turísticos na próxima rodada (~15 min)."}</div>`}
 
-    <h2>🎟️ Passeios e experiências</h2>
+    <h2>🎟️ Experiências e passeios</h2>
     ${experiencesBlock(d)}
 
     <h2 id="hoteis">🏨 Hotéis e hostels</h2>
@@ -1123,7 +1123,7 @@ async function viewTrip() {
   }).join("");
   const base = new URLSearchParams(hashParams);
   const tabLink = (t) => { base.set("aba", t); return `#/viagem?${base}`; };
-  return `<h1>Planeje sua viagem</h1>
+  return `<h1>Hospedagem e experiências</h1>
     <span class="label">Destino</span>
     <div class="chips">${chips}</div>
     <div class="field ac" id="trip-city" style="margin-top:10px">
@@ -1137,7 +1137,7 @@ async function viewTrip() {
       </div>
       <div class="seg" style="margin-bottom:14px">
         <a class="${tab === "hoteis" ? "on" : ""}" href="${tabLink("hoteis")}">🏨 Hotéis e hostels</a>
-        <a class="${tab === "passeios" ? "on" : ""}" href="${tabLink("passeios")}">🎟️ Passeios</a>
+        <a class="${tab === "passeios" ? "on" : ""}" href="${tabLink("passeios")}">🎟️ Experiências</a>
       </div>
       ${tab === "hoteis" ? `${hotelForm({ code, name })}
         ${recent.length ? `<h2>Buscas recentes</h2><div class="card"><div class="list">${recent.map((h) => `<a class="item" href="#/hoteis/${h.id}" style="color:var(--text)">
