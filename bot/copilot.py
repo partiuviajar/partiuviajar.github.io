@@ -27,6 +27,18 @@ from db import DB
 from sources import aviasales
 
 MAX_CANDIDATES = 18
+GOOGLE_CHECKS = 16   # destinos consultados ao vivo no Google Flights por pedido (~7 s cada)
+
+# destinos populares saindo do Rio, para não depender só do cache da Aviasales
+# (o cache só tem o que outras pessoas buscaram; meses distantes ficam quase vazios)
+CURATED = {
+    "BR": ["SSA", "REC", "FOR", "NAT", "MCZ", "JPA", "BPS", "FLN", "NVT", "IGU", "POA", "BEL", "MAO", "SLZ", "FEN", "BSB", "AJU", "CWB", "GRU"],
+    "SA": ["BUE", "BRC", "MDZ", "USH", "SCL", "MVD", "PDP", "LIM", "CUZ", "BOG", "CTG", "MDE", "ASU", "UIO", "LPB"],
+    "CARIB": ["CUN", "PUJ", "PTY", "AUA", "SJO", "HAV"],
+    "US": ["MIA", "ORL", "NYC", "LAS", "LAX"],
+    "EU": ["LIS", "OPO", "MAD", "BCN", "PAR", "ROM", "MIL", "LON", "AMS", "ATH", "IST"],
+    "OTHER": ["CPT", "DXB", "TYO"],
+}
 RG_COUNTRIES = {"BR", "AR", "UY", "PY", "CL", "BO", "PE", "CO", "EC", "VE"}
 VISA_US = {"US", "CA"}  # Canadá aceita eTA para quem tem visto americano
 
@@ -93,6 +105,64 @@ def candidates(a: dict, cities: dict, countries: dict) -> list[dict]:
                 }
         time.sleep(0.5)
     return sorted(best.values(), key=lambda x: x["flight_total"])
+
+
+# ---------------------------------------------------------------------------
+# 1b) Google Flights ao vivo para destinos populares (preço real em qualquer mês)
+# ---------------------------------------------------------------------------
+def google_candidates(a: dict, cities: dict, countries: dict, have: set[str], progress) -> list[dict]:
+    from sources import google
+    origin = a.get("origin") or "RIO"
+    people = int(a.get("adults") or 1) + int(a.get("children") or 0)
+    budget = float(a["budget"])
+    scope = a.get("scope") or "any"
+    min_days, max_days = int(a.get("min_days") or 3), int(a.get("max_days") or 10)
+    months = sorted(a.get("months") or []) or [a["date_from"][:7]]
+    # uma data de ida por destino: dia 10 do mês escolhido (ou daqui a 1 semana), alternando os meses
+    def dates_for(i: int) -> tuple[date, date]:
+        m = months[i % len(months)]
+        dep = max(date.fromisoformat(m + "-10"), date.today() + timedelta(days=7))
+        return dep, dep + timedelta(days=round((min_days + max_days) / 2))
+    pool = []
+    for group, codes in CURATED.items():
+        for code in codes:
+            cc = (cities.get(code) or {}).get("country_code")
+            if not cc or code in have or code == origin:
+                continue
+            if scope == "national" and cc != "BR" or scope == "international" and cc == "BR":
+                continue
+            if not a.get("passport") and cc not in RG_COUNTRIES:
+                continue
+            if not a.get("us_visa") and cc in VISA_US:
+                continue
+            c = cities[code]
+            pool.append({"code": code, "city": c.get("name") or code, "country": countries.get(cc, cc), "country_code": cc,
+                         "lat": (c.get("coordinates") or {}).get("lat"), "lon": (c.get("coordinates") or {}).get("lon")})
+    # clima primeiro (rápido) para gastar as buscas no Google com quem combina
+    for i, c in enumerate(pool):
+        dep, ret = dates_for(i)
+        c.update({"depart": dep.isoformat(), "return": ret.isoformat(), "days": (ret - dep).days})
+        c["clima"] = climate(c)
+    pool.sort(key=lambda c: -climate_score(a, c["clima"]))
+    out, failures = [], 0
+    for n, c in enumerate(pool[:GOOGLE_CHECKS]):
+        progress(f"Consultando passagens ao vivo… {n + 1} de {min(len(pool), GOOGLE_CHECKS)} destinos")
+        try:
+            q = google.cheapest(origin, c["code"], date.fromisoformat(c["depart"]), date.fromisoformat(c["return"]), max(1, min(people, 9)), None)
+            failures = 0
+        except Exception as e:
+            print(f"[google] {c['code']}: {e}")
+            failures += 1
+            if failures >= 3:
+                break
+            continue
+        finally:
+            time.sleep(1.5)
+        if not q or q.price > budget * 0.6:
+            continue
+        out.append({**c, "flight_total": round(q.price), "flight_per_person": round(q.price / people), "airline": q.airline, "stops": q.stops, "source": "google"})
+    print(f"[google] {len(out)} de {min(len(pool), GOOGLE_CHECKS)} destinos cabem no orçamento")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -221,15 +291,18 @@ def run(db: DB, req_id: str):
     try:
         cities, countries = explore._cities(), explore._countries()
         cands = candidates(a, cities, countries)
-        print(f"{len(cands)} destinos com passagem dentro do orçamento")
+        print(f"[aviasales] {len(cands)} destinos com passagem dentro do orçamento")
+        cands += google_candidates(a, cities, countries, {c["code"] for c in cands}, lambda t: upd(stage=t))
+        print(f"{len(cands)} destinos no total")
         if not cands:
             upd(status="done", finished_at=now(), result={"empty": True, "reason": "Não achamos passagens que caibam nesse orçamento e nessas datas. Tente aumentar o orçamento, abrir mais as datas ou aceitar outros tipos de destino."})
             return
         upd(stage="Conferindo o clima real de cada destino…")
-        pool = cands[:40]
+        pool = sorted(cands, key=lambda c: c["flight_total"])[:40]
         for c in pool:
-            c["clima"] = climate(c)
-            time.sleep(0.2)
+            if "clima" not in c:
+                c["clima"] = climate(c)
+                time.sleep(0.2)
         pool.sort(key=lambda c: (-climate_score(a, c["clima"]), c["flight_total"]))
         chosen = pool[:MAX_CANDIDATES]
         for c in chosen:
