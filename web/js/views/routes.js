@@ -3,7 +3,7 @@ import { sb, S, q, esc, brl, ago, fmtDay, fmtShort, fmtDateTime, todayIso, addDa
   place, stopsLabel, sourceLabel, photo, bg, loadDestinations, airlineName, pct } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, seg, bindSeg, thermo, sparkline, changePill, verdictPill, verdictCard, buyVerdict, tripStart, countdownText, tripRange,
-  longWindows, stayOk, stayRange, inScope, inScopeLong, lastCheck, cheapest, summary, googleUrl, priceChart, calendarRange, autocomplete, back, secTitle } from "../ui.js";
+  longWindows, stayOk, stayRange, inScope, inScopeLong, lastCheck, cheapest, summary, priceFor, googleUrl, priceChart, calendarRange, autocomplete, back, secTitle } from "../ui.js";
 import { loadRouteStats } from "../data.js";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,7 @@ function routeCard(s, i) {
         <div class="grow">
           <p class="xs muted">Menor preço${when && r.date_mode !== "fixed" ? ` em <b style="color:var(--foreground)">${esc(when)}</b>` : ""}</p>
           <p class="price-xl">${s.price != null ? brl(s.price) : "…"}</p>
+          ${best ? `<p class="xs muted">${esc(priceFor(r, best).long)}${priceFor(r, best).each ? ` · ${brl(priceFor(r, best).each)} cada` : ""}</p>` : ""}
           <p class="xs muted">${best ? `normal ~${brl(s.normal)} · ${ago(best.checked_at)}` : r.active ? "aguardando a primeira verificação (~15 min)" : "rota pausada"}</p>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${best ? changePill(s.change) : ""}${sparkline(s.points.map((p) => p.y))}</div>
@@ -165,7 +166,8 @@ function priceSection(route, best, normal) {
   })() : "";
   return `<section class="card pad stack">
     <div class="row between" style="align-items:flex-start;gap:12px">
-      <div><p class="sm muted">Menor preço agora</p><p class="price-2xl">${brl(best.price)}</p></div>
+      <div><p class="sm muted">Menor preço agora</p><p class="price-2xl">${brl(best.price)}</p>
+        <p class="xs muted">${esc(priceFor(route, best).long)}${priceFor(route, best).each ? ` · ${brl(priceFor(route, best).each)} por pessoa` : ""}</p></div>
       ${normal ? pill(`${p > 0 ? "+" : ""}${p}% vs normal`, p < 0 ? "good" : "bad") : pill("aprendendo")}
     </div>
     ${thermo(best.price, normal)}

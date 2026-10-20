@@ -141,6 +141,20 @@ export function summary(r) {
   return `${kind} · ${MONTHS[d.getMonth()]} ${d.getFullYear()} inteiro${r.trip_type === "round_trip" ? ` · ${r.stay_days} dias` : ""}${pax}${stops}`;
 }
 
+// para quantas pessoas/passagens é o preço mostrado (sempre o total de todos os passageiros)
+export function priceFor(r, best) {
+  const n = r.adults || 1;
+  const kind = best?.leg === "combo" ? "2 passagens só de ida" : best?.leg === "rt" || (best?.return_date && !best?.leg) ? "ida e volta" : r.trip_type === "round_trip" ? "ida e volta" : "só ida";
+  const tickets = (kind === "só ida" ? 1 : 2) * n;
+  return {
+    short: n > 1 ? `${kind} · total ${n} pessoas` : `${kind} · 1 pessoa`,
+    long: n > 1 ? `${kind} para ${n} pessoas (${tickets} passagens)` : `${kind} para 1 pessoa${kind === "só ida" ? "" : " (2 passagens)"}`,
+    each: n > 1 && best ? Number(best.price) / n : null,
+  };
+}
+export const bestDates = (best) => (!best ? "" : best.return_date ? `${fmtS(best.depart_date)} → ${fmtS(best.return_date)}` : fmtS(best.depart_date));
+const fmtS = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
 export function googleUrl(r, dep, ret, back = false) {
   const [from, to] = back ? [r.destination, r.origin] : [r.origin, r.destination];
   const text = `Flights from ${from} to ${to} on ${dep}` + (ret ? ` through ${ret}` : " one way") + (r.adults > 1 ? ` for ${r.adults} adults` : "");

@@ -1,7 +1,7 @@
 // Home: banner em slide, últimas atualizações, conversor, atalhos, promoção do dia, guias e dica.
 import { sb, S, q, esc, brl, ago, fmtShort, daysBetween, flag, photo, bg, userName, loadDestinations, place } from "../core.js";
 import { icon } from "../icons.js";
-import { pill, thermo, changeArrow, converter, bindConverter, countdownText, daysLeft } from "../ui.js";
+import { pill, thermo, changeArrow, converter, bindConverter, countdownText, daysLeft, priceFor, bestDates } from "../ui.js";
 import { loadRouteStats } from "../data.js";
 
 const TIPS = [
@@ -54,7 +54,8 @@ export async function viewHome() {
         <ul class="updates">${stats.map((s) => `<li><a href="#/rota/${s.r.id}">
           <span class="thumb" ${bg(photo(s.dest, 330))}></span>
           <span class="grow"><p class="sb truncate">${esc(place(s.r, "destination"))}</p><p class="xs muted truncate">${!s.r.active ? "pausada" : s.best ? ago(s.best.checked_at) : "aguardando verificação"}</p></span>
-          <span class="display b">${s.price != null ? brl(s.price) : "…"}</span>${changeArrow(s.change)}
+          <span style="text-align:right;flex:none">${s.price != null ? `<span class="display b">${brl(s.price)}</span>
+            <p class="tiny muted">${esc(bestDates(s.best))}</p><p class="tiny muted">${esc(priceFor(s.r, s.best).short)}</p>` : `<span class="display b">…</span>`}</span>${changeArrow(s.change)}
         </a></li>`).join("")}</ul>
         <a class="soft-link" href="#/alertas" style="margin-top:8px">Ver todos os alertas salvos ${icon("chevron-right", 16)}</a>
       </section>
@@ -116,7 +117,7 @@ function heroInfo(s) {
         <p class="display b truncate" style="font-size:24px;line-height:32px">${esc(place(s.r, "origin"))} → ${esc(place(s.r, "destination"))}</p>
         <p class="xs truncate" style="opacity:.8">${countdownText(s.start) ? `✈️ ${countdownText(s.start)} · ` : ""}${s.best?.return_date ? `${fmtShort(s.best.depart_date)} → ${fmtShort(s.best.return_date)}` : s.best ? fmtShort(s.best.depart_date) : ""}</p>
       </div>
-      <span class="price-chip">${brl(s.price)}</span>
+      <span style="text-align:right;flex:none"><span class="price-chip">${brl(s.price)}</span><p class="tiny" style="opacity:.85;margin-top:4px">${esc(priceFor(s.r, s.best).short)}</p></span>
     </div>
     <div style="max-width:384px">${thermo(s.price, s.normal, true)}</div>`;
 }
