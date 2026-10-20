@@ -573,6 +573,7 @@ def prune(db: DB, now: datetime):
     # viagem longa gera muitas linhas por rodada: guarda só 60 dias
     db.delete("price_snapshots", {"leg": "not.is.null", "checked_at": f"lt.{(now - timedelta(days=60)).isoformat()}"})
     db.delete("bot_runs", {"started_at": f"lt.{(now - timedelta(days=30)).isoformat()}"})
+    db.delete("hotel_searches", {"created_at": f"lt.{(now - timedelta(days=7)).isoformat()}"})
 
 
 def main():

@@ -280,3 +280,13 @@ pre.log { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Me
 .spot-photo { position: relative; aspect-ratio: 4 / 3; background: var(--card-2) center / cover no-repeat; }
 .spot-rank { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 8px; }
 .spot-body { padding: 10px; font-size: 14px; }
+
+/* ---------- hotéis ---------- */
+.hotel { padding: 0; overflow: hidden; }
+.hotel-photo { position: relative; height: 150px; background: var(--card-2) center / cover no-repeat; }
+.hotel-body { padding: 12px 14px 14px; }
+.hotel-name { font-size: 16px; }
+.offers { margin-top: 10px; border-top: 1px solid var(--line); }
+.offer { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.offer.best { background: var(--good-soft); margin: 0 -14px; padding: 8px 14px; border-bottom-color: transparent; }
+.offers details summary { cursor: pointer; color: var(--brand); padding: 8px 0; }

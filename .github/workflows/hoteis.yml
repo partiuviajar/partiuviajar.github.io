@@ -1,0 +1,35 @@
+name: Busca de hotéis
+
+# Disparado pelo Supabase quando você pede uma busca de hotéis no app.
+on:
+  workflow_dispatch:
+    inputs:
+      search:
+        description: "id da busca (hotel_searches.id)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+
+      - run: pip install -r bot/requirements.txt
+
+      - name: Buscar hotéis
+        working-directory: bot
+        env:
+          SUPABASE_URL: https://zukcutypxxpxbioxupss.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEARCH_ID: ${{ inputs.search }}
+        run: python hotels.py "$SEARCH_ID"

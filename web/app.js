@@ -289,6 +289,7 @@ const ROUTES = [
   [/^#\/?$/, viewHome],
   [/^#\/explorar$/, viewExplore],
   [/^#\/destino\/([A-Z0-9]{3})$/, viewDestination],
+  [/^#\/hoteis\/([\w-]+)$/, viewHotels],
   [/^#\/nova$/, viewForm],
   [/^#\/editar\/([\w-]+)$/, viewForm],
   [/^#\/rota\/([\w-]+)$/, viewRoute],
@@ -304,7 +305,7 @@ async function render() {
   if (!session && hash !== "#/login") { location.replace("#/login"); return; }
   if (session && hash === "#/login") { location.replace("#/"); return; }
   $tabs.hidden = !session;
-  const tab = hash.startsWith("#/alertas") ? "alertas" : hash.startsWith("#/config") ? "config" : hash.startsWith("#/explorar") || hash.startsWith("#/destino") ? "explorar" : "rotas";
+  const tab = hash.startsWith("#/alertas") ? "alertas" : hash.startsWith("#/config") ? "config" : hash.startsWith("#/explorar") || hash.startsWith("#/destino") || hash.startsWith("#/hoteis") ? "explorar" : "rotas";
   $tabs.querySelectorAll("a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
   const seq = ++renderSeq;
   const match = ROUTES.find(([re]) => re.test(hash));
@@ -486,8 +487,11 @@ async function viewRoute(id) {
       </div>
       ${!route.active ? `<span class="badge paused photo-badge">pausada</span>` : countdown(start) ? `<span class="badge photo-badge">${countdown(start)}</span>` : ""}
     </div>
-    <a class="card know-card" href="#/destino/${esc(route.destination)}?de=${from}&ate=${to}">
+    <a class="card know-card" href="#/destino/${esc(route.destination)}?de=${from}&ate=${to}&adultos=${route.adults}">
       <span>🧭 Conhecer ${esc(dest?.name || place(route, "destination"))}: clima nas suas datas, pontos turísticos, moeda…</span><span>→</span>
+    </a>
+    <a class="card know-card" style="margin-top:8px" href="#/destino/${esc(route.destination)}?de=${from}&ate=${to}&adultos=${route.adults}&hoteis=1">
+      <span>🏨 Comparar hotéis para essas datas</span><span>→</span>
     </a>
     ${verdict ? `<div style="margin-top:12px">${verdictCard(verdict)}</div>` : ""}
     ${route.last_error ? `<div class="hint warn" style="margin-top:12px">⚠️ ${esc(route.last_error)}</div>` : ""}
@@ -877,12 +881,144 @@ async function viewDestination(code) {
       <p class="muted tiny">Ordenados pela fama (em quantas Wikipedias aparecem). Fotos: Wikimedia Commons.</p>`
       : `<div class="card muted small">${d.attractions_at ? "Não encontramos pontos turísticos cadastrados aqui." : "Preparando a lista… o robô junta os pontos turísticos na próxima rodada (~15 min)."}</div>`}
 
-    <h2>🏨 Hotéis</h2>
-    <div class="card small"><b>Em breve:</b> compare o preço de cada hotel em vários sites (Booking, Expedia, Hoteis.com, Decolar…) para as datas da sua viagem.</div>`;
+    <h2 id="hoteis">🏨 Hotéis e hostels</h2>
+    ${hotelForm(d)}`;
+}
+
+function hotelForm(d) {
+  const de = hashParams.get("de"), ate = hashParams.get("ate");
+  const tomorrow = addDays(todayIso(), 1);
+  const ci = de && de > todayIso() ? de : addDays(todayIso(), 30);
+  const co = ate && ate > ci && daysBetween(ci, ate) <= 30 ? ate : addDays(ci, 7);
+  const adults = Math.max(1, Math.min(8, Number(hashParams.get("adultos")) || 2));
+  return `<form class="card" id="hotel-form">
+    <div class="grid2">
+      <label class="field"><span>Check-in</span><input class="input" type="date" name="checkin" min="${tomorrow}" value="${ci}" required></label>
+      <label class="field"><span>Check-out</span><input class="input" type="date" name="checkout" min="${tomorrow}" value="${co}" required></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>Hóspedes</span><select class="input" name="adults">${[1, 2, 3, 4, 5, 6].map((n) => `<option ${n === adults ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="field"><span>Tipo</span><select class="input" name="kind"><option value="hotel">Hotéis</option><option value="hostel">Hostels</option></select></label>
+    </div>
+    <div id="hotel-msg"></div>
+    <button class="btn primary block" type="submit" style="margin-top:12px">Comparar preços nos sites</button>
+    <p class="muted tiny" style="margin:8px 0 0">Busca no Google Hotels e mostra o preço de cada hotel no Booking, Expedia, Hoteis.com, Decolar, Agoda e outros. Leva cerca de 1 minuto.</p>
+  </form>`;
+}
+
+function bindHotelForm(d) {
+  const f = document.getElementById("hotel-form");
+  if (!f) return;
+  if (hashParams.get("hoteis")) document.getElementById("hoteis")?.scrollIntoView?.({ block: "start" });
+  const [ciIn, coIn, adIn, kindIn] = ["checkin", "checkout", "adults", "kind"].map((n) => f.elements.namedItem(n));
+  ciIn.addEventListener("change", () => { if (coIn.value <= ciIn.value) coIn.value = addDays(ciIn.value, 7); });
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById("hotel-msg");
+    const row = { city_code: d.code, city_name: d.name, checkin: ciIn.value, checkout: coIn.value, adults: Number(adIn.value), kind: kindIn.value };
+    const nights = daysBetween(row.checkin, row.checkout);
+    if (!row.checkin || row.checkin <= todayIso()) { msg.innerHTML = `<div class="hint bad">O check-in precisa ser a partir de amanhã.</div>`; return; }
+    if (nights < 1 || nights > 30) { msg.innerHTML = `<div class="hint bad">A estadia precisa ter de 1 a 30 noites.</div>`; return; }
+    const btn = f.querySelector("[type=submit]");
+    btn.disabled = true;
+    try {
+      // mesma busca nas últimas 6 h: reaproveita
+      const cached = await q(sb.from("hotel_searches").select("id").eq("city_name", row.city_name).eq("checkin", row.checkin).eq("checkout", row.checkout)
+        .eq("adults", row.adults).eq("kind", row.kind).eq("status", "done").gte("created_at", new Date(Date.now() - 6 * 3600000).toISOString()).order("created_at", { ascending: false }).limit(1));
+      const id = cached[0]?.id || (await q(sb.from("hotel_searches").insert(row).select("id").single())).id;
+      location.hash = `#/hoteis/${id}`;
+    } catch (err) { msg.innerHTML = `<div class="hint bad">${esc(friendlyError(err))}</div>`; btn.disabled = false; }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Resultado da busca de hotéis (o robô preenche hotel a hotel; a tela atualiza sozinha)
+// ---------------------------------------------------------------------------
+let hotelSort = "rec";
+
+async function viewHotels(id) {
+  const row = await q(sb.from("hotel_searches").select("*").eq("id", id).maybeSingle());
+  if (!row) return `<div class="hint warn">Busca não encontrada.</div><p><a class="btn" href="#/explorar">Voltar</a></p>`;
+  current = { hotelSearch: row };
+  const nights = daysBetween(row.checkin, row.checkout);
+  return `<p><a href="javascript:history.back()" class="small">← Voltar</a></p>
+    <h1 style="margin-bottom:2px">${row.kind === "hostel" ? "Hostels" : "Hotéis"} em ${esc(row.city_name)}</h1>
+    <div class="muted small">${esc(fmtDay(row.checkin))} → ${esc(fmtDay(row.checkout))} · ${nights} noite${nights > 1 ? "s" : ""} · ${row.adults} hóspede${row.adults > 1 ? "s" : ""}</div>
+    <div class="seg" id="hotel-sort" style="margin-top:14px"><button type="button" data-v="rec">Recomendados</button><button type="button" data-v="price">Menor preço</button><button type="button" data-v="rating">Melhor nota</button></div>
+    <div id="hotels-body" style="margin-top:14px">${hotelsBody(row)}</div>`;
+}
+viewHotels.after = (id) => {
+  const myHash = location.hash;
+  const sortSeg = document.getElementById("hotel-sort");
+  if (!sortSeg) return;
+  const paint = () => {
+    sortSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === hotelSort));
+    document.getElementById("hotels-body").innerHTML = hotelsBody(current.hotelSearch);
+  };
+  sortSeg.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; hotelSort = b.dataset.v; paint(); });
+  paint();
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    if (location.hash !== myHash) return clearInterval(timer);
+    try {
+      const row = await q(sb.from("hotel_searches").select("*").eq("id", id).maybeSingle());
+      if (location.hash !== myHash) return clearInterval(timer);
+      current.hotelSearch = row;
+      paint();
+      if (["done", "error"].includes(row.status) || Date.now() - started > 6 * 60000) clearInterval(timer);
+    } catch {}
+  }, 4000);
+};
+
+function hotelsBody(row) {
+  const hotels = [...(row.results || [])];
+  const waiting = !["done", "error"].includes(row.status);
+  if (row.status === "error") return `<div class="hint bad">A busca falhou: ${esc(row.error || "erro desconhecido")}. Tente de novo em alguns minutos.</div>`;
+  if (!hotels.length) {
+    return waiting
+      ? `<div class="card empty"><div class="big">🔎</div><p><b>Procurando hotéis e comparando os sites…</b><br>Leva cerca de 1 minuto. Pode deixar esta tela aberta.</p></div>`
+      : `<div class="card empty">Nenhum hotel encontrado para essas datas.</div>`;
+  }
+  const best = (h) => Math.min(...(h.offers || []).map((o) => o.total ?? Infinity), h.total ?? Infinity);
+  if (hotelSort === "price") hotels.sort((a, b) => best(a) - best(b));
+  if (hotelSort === "rating") hotels.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  const pending = hotels.filter((h) => h.offers == null).length;
+  return `${waiting ? `<div class="hint" style="margin-bottom:12px">🔎 Comparando os sites… ${hotels.length - pending} de ${hotels.length} hotéis prontos.</div>` : ""}
+    <div class="stack">${hotels.map(hotelCard).join("")}</div>
+    <p class="muted tiny">Preços do Google Hotels em reais, com taxas quando o site informa. Confira o valor final no site antes de reservar.</p>`;
+}
+
+function hotelCard(h) {
+  const offers = h.offers || [];
+  const row = (o, i) => `<div class="offer ${i === 0 ? "best" : ""}">
+      <div class="grow"><b>${esc(o.provider)}</b>${i === 0 && offers.length > 1 ? ` <span class="badge good">mais barato</span>` : ""}
+        <div class="muted tiny">${o.night != null ? `${brl(o.night)}/noite` : ""}</div></div>
+      <b>${o.total != null ? brl(o.total) : brl(o.night)}</b>
+      ${o.link ? `<a class="btn sm" href="${esc(o.link)}" target="_blank" rel="noopener">Reservar ↗</a>` : ""}
+    </div>`;
+  const stars = h.stars ? "★".repeat(h.stars) : "";
+  return `<div class="card hotel">
+    <div class="hotel-photo" ${bgPhoto(h.image)}>${stars ? `<span class="badge photo-badge">${stars}</span>` : ""}</div>
+    <div class="hotel-body">
+      <b class="hotel-name">${esc(h.name)}</b>
+      <div class="small">${h.rating ? `⭐ ${Number(h.rating).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}/5` : ""}${h.reviews ? ` · ${Number(h.reviews).toLocaleString("pt-BR")} avaliações` : ""}</div>
+      <div class="muted small" style="margin-top:2px">a partir de <b>${brl(h.night)}/noite</b>${h.total ? ` · ${brl(h.total)} no total` : ""}</div>
+      <div class="offers">
+        ${h.offers == null ? `<div class="muted small">⏳ comparando os sites…</div>`
+          : !offers.length ? `<div class="muted small">Sem preços por site para essas datas.</div>`
+          : offers.slice(0, 4).map(row).join("") + (offers.length > 4 ? `<details><summary class="small">ver mais ${offers.length - 4} site${offers.length - 4 > 1 ? "s" : ""}</summary>${offers.slice(4).map((o, i) => row(o, i + 4)).join("")}</details>` : "")}
+      </div>
+      <div class="row tiny" style="gap:12px;margin-top:8px">
+        ${h.page ? `<a href="${esc(h.page)}" target="_blank" rel="noopener">Ver no Google Hotels ↗</a>` : ""}
+        ${h.lat ? `<a href="https://www.google.com/maps/search/?api=1&query=${h.lat},${h.lng}" target="_blank" rel="noopener">Mapa ↗</a>` : ""}
+      </div>
+    </div>
+  </div>`;
 }
 viewDestination.after = async () => {
   const { dest: d, de, ate } = current || {};
   if (!d?.lat) return;
+  bindHotelForm(d);
   const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
   const f = d.facts || {};
   // câmbio do dia
