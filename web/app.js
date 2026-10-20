@@ -290,6 +290,7 @@ const ROUTES = [
   [/^#\/explorar$/, viewExplore],
   [/^#\/destino\/([A-Z0-9]{3})$/, viewDestination],
   [/^#\/hoteis\/([\w-]+)$/, viewHotels],
+  [/^#\/viagem$/, viewTrip],
   [/^#\/nova$/, viewForm],
   [/^#\/editar\/([\w-]+)$/, viewForm],
   [/^#\/rota\/([\w-]+)$/, viewRoute],
@@ -305,7 +306,7 @@ async function render() {
   if (!session && hash !== "#/login") { location.replace("#/login"); return; }
   if (session && hash === "#/login") { location.replace("#/"); return; }
   $tabs.hidden = !session;
-  const tab = hash.startsWith("#/alertas") ? "alertas" : hash.startsWith("#/config") ? "config" : hash.startsWith("#/explorar") || hash.startsWith("#/destino") || hash.startsWith("#/hoteis") ? "explorar" : "rotas";
+  const tab = hash.startsWith("#/alertas") ? "alertas" : hash.startsWith("#/config") ? "config" : hash.startsWith("#/viagem") || hash.startsWith("#/hoteis") ? "viagem" : hash.startsWith("#/explorar") || hash.startsWith("#/destino") ? "explorar" : "rotas";
   $tabs.querySelectorAll("a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
   const seq = ++renderSeq;
   const match = ROUTES.find(([re]) => re.test(hash));
@@ -1085,6 +1086,105 @@ viewDestination.after = async () => {
       <div class="muted tiny" style="margin-top:8px">${esc(label)}: como foi o tempo nesse mesmo período ${years > 1 ? `há ${years} anos` : "no ano passado"} (dados reais da Open-Meteo).</div>`);
   } catch { set("weather", `<div class="muted small">Não foi possível carregar o clima agora.</div>`); }
 };
+
+// ---------------------------------------------------------------------------
+// Aba "Viagem": hotéis/hostels e passeios de um destino
+// #/viagem?d=BUE&nome=Buenos%20Aires&de=…&ate=…&adultos=2&aba=hoteis|passeios
+// ---------------------------------------------------------------------------
+async function viewTrip() {
+  const [routes, recent] = await Promise.all([
+    q(sb.from("routes").select("*").order("created_at")),
+    q(sb.from("hotel_searches").select("id,city_name,checkin,checkout,adults,kind,status,created_at").order("created_at", { ascending: false }).limit(6)).catch(() => []),
+  ]);
+  const dests = await loadDestinations(routes.map((r) => r.destination), "code,name,country_name,thumb,lat,experiences,experiences_at");
+  // destino escolhido: o da URL ou, na primeira vez, o da primeira rota ativa
+  let code = hashParams.get("d");
+  if (!code) {
+    const first = routes.find((r) => r.active) || routes[0];
+    if (first) {
+      const [de, ate] = tripRange(first);
+      location.replace(`#/viagem?${tripParams(first, de, ate)}`);
+      return "";
+    }
+  }
+  const tab = hashParams.get("aba") === "passeios" ? "passeios" : "hoteis";
+  let d = code ? dests[code] || (await loadDestinations([code], "code,name,country_name,thumb,lat,experiences,experiences_at"))[code] : null;
+  if (code && !d) {
+    // cidade ainda não preparada: pede ao robô (passeios chegam em ~15 min); hotéis já funcionam pelo nome
+    try { await q(sb.from("destinations").upsert({ code, attractions_requested_at: new Date().toISOString() }, { onConflict: "code" })); } catch {}
+  }
+  const name = d?.name || hashParams.get("nome") || code;
+  current = { trip: { code, name, d } };
+  const chips = routes.filter((r) => r.active).filter((r, i, a) => a.findIndex((x) => x.destination === r.destination) === i).map((r) => {
+    const [de, ate] = tripRange(r);
+    const dd = dests[r.destination];
+    return `<a class="chip ${r.destination === code ? "on" : ""}" href="#/viagem?${tripParams(r, de, ate, tab)}">
+      <span class="chip-photo" ${bgPhoto(photo(dd, 330))}></span>${esc(dd?.name || place(r, "destination"))}</a>`;
+  }).join("");
+  const base = new URLSearchParams(hashParams);
+  const tabLink = (t) => { base.set("aba", t); return `#/viagem?${base}`; };
+  return `<h1>Planeje sua viagem</h1>
+    <span class="label">Destino</span>
+    <div class="chips">${chips}</div>
+    <div class="field ac" id="trip-city" style="margin-top:10px">
+      <input class="input" type="text" autocomplete="off" placeholder="Outra cidade… (ex.: Lisboa, Santiago)">
+      <div class="ac-list" hidden></div>
+    </div>
+    ${code ? `
+      <div class="hero" style="margin-top:14px" ${bgPhoto(photo(d, 960))}>
+        <div class="hero-text"><h1>${esc(name)}</h1><div class="small">${esc(d?.country_name || "")}</div></div>
+        <a class="badge photo-badge" href="#/destino/${esc(code)}${hashParams.get("de") ? `?de=${hashParams.get("de")}&ate=${hashParams.get("ate")}` : ""}">🧭 sobre a cidade</a>
+      </div>
+      <div class="seg" style="margin-bottom:14px">
+        <a class="${tab === "hoteis" ? "on" : ""}" href="${tabLink("hoteis")}">🏨 Hotéis e hostels</a>
+        <a class="${tab === "passeios" ? "on" : ""}" href="${tabLink("passeios")}">🎟️ Passeios</a>
+      </div>
+      ${tab === "hoteis" ? `${hotelForm({ code, name })}
+        ${recent.length ? `<h2>Buscas recentes</h2><div class="card"><div class="list">${recent.map((h) => `<a class="item" href="#/hoteis/${h.id}" style="color:var(--text)">
+          <div class="grow"><b>${h.kind === "hostel" ? "Hostels" : "Hotéis"} em ${esc(h.city_name)}</b>
+          <div class="muted small">${esc(fmtShort(h.checkin))} → ${esc(fmtShort(h.checkout))} · ${h.adults} hóspede${h.adults > 1 ? "s" : ""} · ${ago(h.created_at)}</div></div>
+          <span class="badge ${h.status === "done" ? "good" : h.status === "error" ? "bad" : ""}">${h.status === "done" ? "pronta" : h.status === "error" ? "falhou" : "buscando"}</span></a>`).join("")}</div></div>` : ""}`
+      : experiencesBlock({ name, experiences: d?.experiences, experiences_at: d?.experiences_at })}`
+    : `<div class="card empty" style="margin-top:14px"><div class="big">🧳</div><p>Escolha um destino acima ou digite uma cidade.</p></div>`}`;
+}
+viewTrip.after = () => {
+  if (current?.trip?.code) bindHotelForm(current.trip);
+  // busca de outra cidade (mesmo autocomplete do cadastro de rota)
+  const wrap = document.getElementById("trip-city");
+  if (!wrap) return;
+  const input = wrap.querySelector("input"), list = wrap.querySelector(".ac-list");
+  let timer, seq = 0, items = [];
+  const go = (it) => {
+    const cityCode = it.type === "airport" ? it.city_code || it.code : it.code;
+    const label = it.type === "city" ? it.name : it.city_name || it.name;
+    location.hash = `#/viagem?${new URLSearchParams({ d: cityCode, nome: label, aba: hashParams.get("aba") || "hoteis" })}`;
+  };
+  list.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest("button[data-i]"); if (!b) return;
+    e.preventDefault(); go(items[Number(b.dataset.i)]);
+  });
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const term = input.value.trim();
+    if (term.length < 2) { list.hidden = true; return; }
+    timer = setTimeout(async () => {
+      const my = ++seq;
+      try {
+        const found = (await (await fetch(`https://autocomplete.travelpayouts.com/places2?term=${encodeURIComponent(term)}&locale=pt&types[]=city`)).json()).slice(0, 6);
+        if (my !== seq) return;
+        items = found;
+        list.innerHTML = items.map((it, i) => `<button type="button" data-i="${i}"><span class="code">${esc(it.code)}</span><span class="grow"><b>${esc(it.name)}</b><br><span class="muted tiny">${esc(it.country_name || "")}</span></span></button>`).join("") || `<div class="muted small" style="padding:10px">Nada encontrado.</div>`;
+        list.hidden = false;
+      } catch { list.hidden = true; }
+    }, 200);
+  });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && items.length) { e.preventDefault(); go(items[0]); } });
+  input.addEventListener("blur", () => setTimeout(() => (list.hidden = true), 150));
+};
+
+function tripParams(r, de, ate, aba = "hoteis") {
+  return new URLSearchParams({ d: r.destination, nome: place(r, "destination"), de, ate, adultos: String(r.adults || 2), aba });
+}
 
 // ---------------------------------------------------------------------------
 // Alertas
