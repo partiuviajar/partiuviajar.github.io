@@ -514,3 +514,9 @@ details > summary::-webkit-details-marker { display: none; }
 .cop-day { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; }
 .cop-day .pill { flex: none; }
 .gallery + .page .sec-nav { margin-top: -4px; }
+.cop-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.cop-month { display: flex; flex-direction: column; align-items: center; padding: 10px 4px; border-radius: var(--r-xl); background: var(--card); box-shadow: var(--shadow-sm); border: 2px solid transparent; }
+.cop-month b { font-size: 16px; text-transform: capitalize; }
+.cop-month span { font-size: 11px; color: var(--muted-foreground); }
+.cop-month.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.btn:disabled { opacity: 1; background: var(--muted) !important; color: var(--muted-foreground) !important; box-shadow: none !important; cursor: progress; }

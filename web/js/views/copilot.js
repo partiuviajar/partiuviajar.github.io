@@ -53,7 +53,7 @@ let at = 0;     // passo atual
 const STEPS = [
   { id: "budget", title: "Quanto você quer gastar no total?", sub: "Inclui passagens, hospedagem, comida e passeios, para todo mundo." },
   { id: "people", title: "Quem vai?" },
-  { id: "dates", title: "Quando você pode viajar?", sub: "Uma janela de datas: a gente acha os dias mais baratos dentro dela." },
+  { id: "dates", title: "Em que mês você quer viajar?", sub: "Pode escolher mais de um: a gente acha os dias mais baratos dentro deles." },
   { id: "climate", title: "Que clima você quer?" },
   { id: "snow", title: "Quer ver neve? ❄️", when: () => A.climate === "cold" },
   { id: "beach", title: "Praia faz parte do plano?" },
@@ -81,8 +81,7 @@ function stepBody(s) {
       <div class="row wrap" style="gap:8px;justify-content:center">${[3000, 5000, 8000, 10000, 15000, 25000].map((v) => `<button type="button" class="pill ${A.budget === v ? "primary" : "plain"} pressable" data-budget="${v}" style="padding:8px 14px;font-size:14px;box-shadow:var(--shadow-sm)">${brl(v)}</button>`).join("")}</div>`;
     case "people": return `<div class="stack">${stepper("adults", "Adultos", 1, 9)}${stepper("children", "Crianças", 0, 6)}</div>`;
     case "dates": return `<div class="stack">
-      <div class="grid2" style="gap:8px"><label class="field"><span>A partir de</span><input class="input" type="date" id="d-from" min="${addDays(todayIso(), 3)}" value="${A.date_from}"></label>
-        <label class="field"><span>Até</span><input class="input" type="date" id="d-to" min="${addDays(todayIso(), 4)}" value="${A.date_to}"></label></div>
+      <div class="cop-months">${nextMonths().map(([v, l, y]) => `<button type="button" class="cop-month pressable ${(A.months || []).includes(v) ? "on" : ""}" data-month="${v}"><b>${l}</b><span>${y}</span></button>`).join("")}</div>
       <div class="grid2" style="gap:8px"><label class="field"><span>Viagem de no mínimo (dias)</span><input class="input" type="number" id="d-min" min="2" max="30" inputmode="numeric" value="${A.min_days}"></label>
         <label class="field"><span>No máximo (dias)</span><input class="input" type="number" id="d-max" min="2" max="30" inputmode="numeric" value="${A.max_days}"></label></div>
       <p class="xs muted">Saindo do Rio de Janeiro.</p></div>`;
@@ -102,7 +101,7 @@ function stepBody(s) {
       return `<div class="card pad">
         ${row("Orçamento total", brl(A.budget))}
         ${row("Quem vai", `${A.adults} adulto${A.adults > 1 ? "s" : ""}${A.children ? ` + ${A.children} criança${A.children > 1 ? "s" : ""}` : ""}`)}
-        ${row("Quando", `${fmtShort(A.date_from)} a ${fmtShort(A.date_to)} · ${A.min_days} a ${A.max_days} dias`)}
+        ${row("Quando", `${monthsLabel(A.months)} · ${A.min_days} a ${A.max_days} dias`)}
         ${row("Clima", `${L[A.climate]}${A.climate === "cold" && A.snow ? " com neve" : ""}`)}
         ${row("Praia", `${L[A.beach]}${A.beach === "yes" ? ` (${L[A.beach_vibe]})` : ""}`)}
         ${row("Destino", `${L[A.scope]}${A.scope !== "national" ? ` · ${A.passport ? "com passaporte" : "só RG"}${A.passport && A.us_visa ? " e visto americano" : ""}` : ""}`)}
@@ -114,9 +113,19 @@ function stepBody(s) {
   return "";
 }
 
+const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+function nextMonths() {
+  const d = new Date(); d.setDate(1);
+  return Array.from({ length: 12 }, (_, i) => {
+    const x = new Date(d.getFullYear(), d.getMonth() + i, 1);
+    return [`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`, MES[x.getMonth()], x.getFullYear()];
+  });
+}
+const monthsLabel = (ms = []) => [...ms].sort().map((m) => `${MES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`).join(", ") || "–";
+
 export function viewCopilotForm() {
   const start = addDays(todayIso(), 30);
-  A = A || { budget: null, adults: 2, children: 0, date_from: start, date_to: addDays(start, 60), min_days: 5, max_days: 10, climate: null, snow: false, beach: null, beach_vibe: "calm", scope: "any", passport: true, us_visa: false, interests: [], pace: "slow", notes: "", origin: "RIO" };
+  A = A || { budget: null, adults: 2, children: 0, months: [], date_from: start, date_to: addDays(start, 60), min_days: 5, max_days: 10, climate: null, snow: false, beach: null, beach_vibe: "calm", scope: "any", passport: true, us_visa: false, interests: [], pace: "slow", notes: "", origin: "RIO" };
   at = Math.min(at, visible().length - 1);
   return `<main class="page" id="cop-form">${formInner()}</main>`;
 }
@@ -150,14 +159,17 @@ function readStep() {
     A.budget = v;
   }
   if (s.id === "dates") {
-    const f = document.getElementById("d-from").value, t = document.getElementById("d-to").value;
     const mn = Number(document.getElementById("d-min").value), mx = Number(document.getElementById("d-max").value);
-    if (!f || f <= todayIso()) return fail("Escolha uma data inicial a partir de amanhã.");
-    if (!t || t <= f) return fail("A data final precisa ser depois da inicial.");
-    if (daysBetween(f, t) > 180) return fail("A janela pode ter no máximo 6 meses.");
+    if (!(A.months || []).length) return fail("Escolha pelo menos um mês.");
     if (!(mn >= 2 && mx >= mn && mx <= 30)) return fail("Duração: mínimo de 2 dias e máximo de 30, com o máximo maior que o mínimo.");
-    if (mn > daysBetween(f, t)) return fail("A janela de datas é menor que a duração mínima.");
-    Object.assign(A, { date_from: f, date_to: t, min_days: mn, max_days: mx });
+    const ms = [...A.months].sort();
+    const first = ms[0] + "-01";
+    const lastStart = ms[ms.length - 1] + "-01";
+    const end = new Date(Number(lastStart.slice(0, 4)), Number(lastStart.slice(5, 7)), 0);
+    // a viagem pode terminar até o fim do mês seguinte ao último escolhido (quem sai no fim do mês volta no outro)
+    const lastDay = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+    const from = first > addDays(todayIso(), 2) ? first : addDays(todayIso(), 3);
+    Object.assign(A, { date_from: from, date_to: addDays(lastDay, mx), min_days: mn, max_days: mx });
   }
   const need = { climate: "climate", beach: "beach", scope: "scope" }[s.id];
   if (need && A[need] == null) return fail("Escolha uma opção.");
@@ -173,6 +185,12 @@ function bindForm() {
     const n = e.target.value.replace(/\D/g, "");
     e.target.value = n ? Number(n).toLocaleString("pt-BR") : "";
   });
+  root.querySelectorAll("[data-month]").forEach((b) => b.addEventListener("click", () => {
+    const set = new Set(A.months || []);
+    set.has(b.dataset.month) ? set.delete(b.dataset.month) : set.add(b.dataset.month);
+    A.months = [...set];
+    b.classList.toggle("on");
+  }));
   root.querySelectorAll("[data-st]").forEach((b) => b.addEventListener("click", () => {
     const k = b.dataset.st, min = k === "children" ? 0 : 1, max = k === "children" ? 6 : 9;
     A[k] = Math.min(max, Math.max(min, A[k] + Number(b.dataset.d)));
@@ -196,14 +214,24 @@ function bindForm() {
   }));
   document.getElementById("cop-prev")?.addEventListener("click", () => { at = Math.max(0, at - 1); redraw(); });
   document.getElementById("cop-next")?.addEventListener("click", () => { if (readStep()) { at = Math.min(visible().length - 1, at + 1); redraw(); } });
-  document.getElementById("cop-send")?.addEventListener("click", async (e) => {
-    e.currentTarget.disabled = true;
+  const send = document.getElementById("cop-send");
+  send?.addEventListener("click", async () => {
+    const msg = document.getElementById("cop-msg");
+    const label = send.innerHTML;
+    send.disabled = true;
+    send.innerHTML = "⏳ Enviando suas respostas…";
+    msg.innerHTML = "";
     try {
       const answers = { ...A, passport: A.scope === "national" ? false : A.passport, us_visa: A.scope === "national" ? false : A.us_visa };
       const row = await q(sb.from("copilot_requests").insert({ answers }).select("id").single());
       at = 0;
       location.hash = `#/copiloto/${row.id}`;
-    } catch (err) { e.currentTarget.disabled = false; document.getElementById("cop-msg").innerHTML = `<div class="hint bad">${esc(friendlyError(err))}</div>`; }
+    } catch (err) {
+      send.disabled = false;
+      send.innerHTML = label;
+      const m = friendlyError(err);
+      msg.innerHTML = `<div class="hint bad">Não consegui enviar: ${esc(/copilot_requests|schema cache/.test(m) ? "o Copiloto ainda não foi ativado no banco de dados (falta rodar o comando no Supabase)." : m)}</div>`;
+    }
   });
 }
 viewCopilotForm.after = bindForm;

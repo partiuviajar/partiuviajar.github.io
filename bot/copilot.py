@@ -50,7 +50,9 @@ def candidates(a: dict, cities: dict, countries: dict) -> list[dict]:
     budget = float(a["budget"])
     scope = a.get("scope") or "any"
     best: dict[str, dict] = {}
-    for m in months_between(d_from, d_to):
+    chosen = sorted(a.get("months") or [])  # meses escolhidos no app (a ida acontece dentro deles)
+    months = [date.fromisoformat(m + "-01") for m in chosen] or months_between(d_from, d_to)
+    for m in months:
         try:
             items = aviasales._fetch({"origin": origin, "departure_at": m.strftime("%Y-%m"), "one_way": "false", "unique": "false"})
         except Exception as e:
@@ -65,6 +67,8 @@ def candidates(a: dict, cities: dict, countries: dict) -> list[dict]:
             dd, rr = date.fromisoformat(dep), date.fromisoformat(ret)
             days = (rr - dd).days
             if dd < d_from or rr > d_to or not (min_days <= days <= max_days):
+                continue
+            if chosen and dep[:7] not in chosen:
                 continue
             cc = (cities.get(dest) or {}).get("country_code")
             if scope == "national" and cc != "BR":
