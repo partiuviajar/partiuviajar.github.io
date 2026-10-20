@@ -293,7 +293,7 @@ def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[st
     # passeios (GetYourGuide, Viator, Civitatis): rotas e pedidos do app, refeitos a cada 7 dias
     week_old = lambda ts: not ts or datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None) < datetime.utcnow() - EXPERIENCES_REFRESH
     # listas antigas sem "brl" vieram com preço em dólar do Viator: refaz
-    stale_cur = lambda r: any(not x.get("brl") for x in (r.get("experiences") or []))
+    stale_cur = lambda r: any(x.get("brl") != 2 for x in (r.get("experiences") or []))  # 2 = preço pedido direto em reais
     want = [c for c, r in known.items() if r.get("lat") and (week_old(r.get("experiences_at")) or stale_cur(r)) and (
         c in route_codes or r.get("attractions_requested_at") or r.get("experiences"))]
     # listas com preço em dólar (antes da correção) vêm primeiro e sem limite apertado

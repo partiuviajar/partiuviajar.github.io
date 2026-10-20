@@ -13,7 +13,8 @@ from curl_cffi import requests
 
 URLS = {
     "GetYourGuide": "https://www.getyourguide.com/pt-br/s/?q={q}",
-    "Viator": "https://www.viator.com/pt-BR/searchResults/all?text={q}",   # costuma redirecionar para /pt-BR/<Cidade>/d<id>-ttd
+    # currency=BRL: o Viator responde em reais mesmo para o servidor nos EUA (mesmo preço do site para o Brasil)
+    "Viator": "https://www.viator.com/pt-BR/searchResults/all?text={q}&currency=BRL",   # costuma redirecionar para /pt-BR/<Cidade>/d<id>-ttd
     "Civitatis": "https://www.civitatis.com/br/procurar?q={q}",             # redireciona para /br/<cidade>/
 }
 PER_SOURCE = 8
@@ -61,7 +62,7 @@ def _item(provider, title, price, rating, reviews, photo, link, currency="BRL") 
     if not title or not link or NOT_TOURS.search(title):
         return None
     rating = _num(rating)
-    return {"provider": provider, "title": title, "price": to_brl(price, currency), "brl": True, "rating": round(rating, 2) if rating else None,
+    return {"provider": provider, "title": title, "price": to_brl(price, currency), "brl": 2, "rating": round(rating, 2) if rating else None,
             "reviews": int(_num(reviews) or 0), "photo": photo, "link": link}
 
 
@@ -159,6 +160,9 @@ def search(names: list[str]) -> tuple[list[dict], list[str]]:
             try:
                 r = session.get(url.format(q=quote(city)), timeout=30)
                 r.raise_for_status()
+                if name == "Viator" and "currency=BRL" not in str(r.url):
+                    r = session.get(str(r.url) + ("&" if "?" in str(r.url) else "?") + "currency=BRL", timeout=30)
+                    r.raise_for_status()
                 items = [x for x in PARSERS[name](r.text) if x and x["price"]]
             except Exception as e:
                 error = f"{type(e).__name__}: {str(e)[:80]}"
