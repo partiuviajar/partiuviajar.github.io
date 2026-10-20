@@ -296,7 +296,10 @@ def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[st
     stale_cur = lambda r: any(not x.get("brl") for x in (r.get("experiences") or []))
     want = [c for c, r in known.items() if r.get("lat") and (week_old(r.get("experiences_at")) or stale_cur(r)) and (
         c in route_codes or r.get("attractions_requested_at") or r.get("experiences"))]
-    for code in want[:EXPERIENCES_PER_RUN]:
+    # listas com preço em dólar (antes da correção) vêm primeiro e sem limite apertado
+    want.sort(key=lambda c: not stale_cur(known[c]))
+    limit = max(EXPERIENCES_PER_RUN, sum(1 for c in want if stale_cur(known[c])))
+    for code in want[:min(limit, 8)]:
         if time.monotonic() > deadline:
             break
         r = known[code]
