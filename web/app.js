@@ -6,6 +6,7 @@ import { viewRoutes, viewRoute, viewForm, viewExplore } from "./js/views/routes.
 import { viewGuideIndex, viewGuide } from "./js/views/guide.js";
 import { viewStay, viewHotels } from "./js/views/stay.js";
 import { viewAlerts, viewSettings, viewLogin, viewFavorites } from "./js/views/misc.js";
+import { viewCopilot, viewCopilotForm, viewCopilotResult } from "./js/views/copilot.js";
 
 const $view = document.getElementById("view");
 const SKELETON = `<main class="page"><div class="skeleton" style="height:180px;border-radius:var(--r-3xl)"></div><div class="skeleton" style="height:96px"></div><div class="skeleton" style="height:96px"></div></main>`;
@@ -28,14 +29,17 @@ const ROUTES = [
   [/^#\/alertas$/, viewAlerts],
   [/^#\/config$/, viewSettings],
   [/^#\/favoritos$/, viewFavorites],
+  [/^#\/copiloto$/, viewCopilot],
+  [/^#\/copiloto\/novo$/, viewCopilotForm],
+  [/^#\/copiloto\/([\w-]+)$/, viewCopilotResult],
 ];
 
 const TABS = [
   ["#/", "Home", "house", (h) => h === "#/" || h === "#"],
   ["#/rotas", "Rotas", "plane", (h) => /^#\/(rota|nova|editar|explorar)/.test(h)],
+  ["#/copiloto", "Copiloto", "sparkles", (h) => h.startsWith("#/copiloto")],
   ["#/guide", "Guide", "earth", (h) => /^#\/(guide|destino)/.test(h)],
   ["#/hospedagem", "Hospedagem", "bed-double", (h) => /^#\/(hospedagem|hoteis|viagem)/.test(h)],
-  ["#/alertas", "Alertas", "bell", (h) => h.startsWith("#/alertas")],
 ];
 
 function shell(hash, logged) {
@@ -44,8 +48,12 @@ function shell(hash, logged) {
   if (!logged) return;
   document.getElementById("tabs-in").innerHTML = TABS.map(([href, label, ic, active]) => {
     const on = active(hash);
-    return `<a class="tab pressable ${on ? "active" : ""}" href="${href}"><span class="tab-ic">${icon(ic, 20, "", on ? 2.4 : 2)}</span><span>${label}</span>${label === "Alertas" && S.newAlerts ? `<span class="tab-badge">${S.newAlerts}</span>` : ""}</a>`;
+    return `<a class="tab pressable ${on ? "active" : ""} ${label === "Copiloto" ? "tab-copilot" : ""}" href="${href}"><span class="tab-ic">${icon(ic, 20, "", on ? 2.4 : 2)}</span><span>${label}</span></a>`;
   }).join("");
+  const bell = document.getElementById("alerts-btn");
+  bell.classList.toggle("on", hash.startsWith("#/alertas"));
+  bell.querySelector(".tab-badge")?.remove();
+  if (S.newAlerts) bell.insertAdjacentHTML("beforeend", `<span class="tab-badge" style="right:-4px;top:-4px">${S.newAlerts}</span>`);
   document.getElementById("settings-btn").classList.toggle("on", hash.startsWith("#/config"));
   document.getElementById("favs-btn").classList.toggle("on", hash.startsWith("#/favoritos"));
 }
@@ -99,6 +107,7 @@ async function updateBotStatus() {
 
 document.getElementById("brand-logo").innerHTML = icon("radar", 20);
 document.getElementById("settings-btn").innerHTML = icon("settings", 18);
+document.getElementById("alerts-btn").innerHTML = icon("bell", 18);
 document.getElementById("favs-btn").innerHTML = heartIcon.replace('width="20" height="20"', 'width="18" height="18"');
 // coração em qualquer tela (fica dentro de cartões-link: não deixa abrir o link)
 document.addEventListener("click", (e) => {

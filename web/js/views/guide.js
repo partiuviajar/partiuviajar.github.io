@@ -115,10 +115,14 @@ async function makeGlobe(canvas, list) {
   const { default: createGlobe } = await import("https://cdn.jsdelivr.net/npm/cobe@0.6.4/+esm");
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   let phi = 0.6, theta = 0.25, target = null, drag = null, width = 0;
-  const resize = () => (width = canvas.offsetWidth);
+  const dpr = Math.min(1.5, devicePixelRatio || 1);
+  const resize = () => {
+    width = canvas.offsetWidth || canvas.parentElement?.offsetWidth || 320;
+    canvas.width = canvas.height = Math.round(width * dpr);
+  };
   resize();
   const g = createGlobe(canvas, {
-    devicePixelRatio: Math.min(1.5, devicePixelRatio || 1), width: width * 2, height: width * 2, phi, theta,
+    devicePixelRatio: dpr, width: width * dpr, height: width * dpr, phi, theta,
     dark: dark ? 1 : 0, diffuse: 1.4, mapSamples: 12000, mapBrightness: dark ? 5 : 8, mapBaseBrightness: 0.05,
     baseColor: dark ? [0.25, 0.3, 0.55] : [0.86, 0.9, 1], glowColor: dark ? [0.25, 0.3, 0.7] : [0.75, 0.82, 1], markerColor: [0.83, 1, 0.23],
     markers: [{ location: RIO, size: 0.07 }, ...list.slice(0, 80).map((d) => ({ location: [d.lat, d.lon], size: 0.05 }))],
@@ -131,7 +135,7 @@ async function makeGlobe(canvas, list) {
           phi += d * 0.08; theta += (tt * 0.8 - theta) * 0.08;
         } else { phi += 0.003; theta += (0.25 - theta) * 0.05; }
       }
-      state.phi = phi; state.theta = theta; state.width = width * 2; state.height = width * 2;
+      state.phi = phi; state.theta = theta; state.width = width * dpr; state.height = width * dpr;
     },
   });
   requestAnimationFrame(() => (canvas.style.opacity = "1"));
@@ -202,6 +206,7 @@ export async function viewGuide(code) {
       ${images.length > 1 ? `<button type="button" class="gallery-count glass" data-i="0">Ver ${images.length} fotos</button>` : ""}
     </div></section>
     <main class="page">
+      <nav class="sec-nav glass">${[["g-custos", "💸 Custos"], ["g-clima", "🌦️ Clima e tempo"], ["g-pontos", "📍 Pontos turísticos"], ...(tours.length ? [["g-passeios", "🎟️ Passeios"]] : []), ["g-info", "🧳 Info prática"]].map(([id, l]) => `<a href="#${id}" data-a>${l}</a>`).join("")}</nav>
       <div class="row between" style="align-items:flex-start;gap:12px">
         <div class="grow"><p class="sm sb muted">${flag(d.country_code)} ${esc(d.country_name || "")}</p>
           <h1 class="display xb" style="font-size:36px;line-height:40px">${esc(d.name)}</h1>
@@ -210,7 +215,6 @@ export async function viewGuide(code) {
         <button class="card share-btn pressable" id="share" aria-label="Compartilhar">${icon("share-2", 20)}</button></div>
       </div>
       <div class="row wrap" style="gap:6px">${tags.map((t) => pill(esc(t), "primary")).join("")}</div>
-      <nav class="sec-nav glass"><a href="#g-visao" data-a>Visão geral</a><a href="#g-clima" data-a>Clima</a><a href="#g-custos" data-a>Custos</a><a href="#g-pontos" data-a>O que fazer</a><a href="#g-info" data-a>Info prática</a></nav>
 
       <section class="card pad" id="g-visao"><div class="overview">
         <div class="facts-list">
@@ -251,7 +255,7 @@ export async function viewGuide(code) {
         : d.attractions_at ? `<div class="card pad sm muted">Não encontramos pontos turísticos cadastrados aqui.</div>`
         : `<div class="card pad center"><p class="sm muted">${preparing ? "⏳ Preparando pontos turísticos e passeios… você recebe uma notificação quando ficar pronto." : "Os pontos turísticos e passeios desta cidade ainda não foram preparados."}</p>
           ${preparing ? "" : `<button class="btn primary pressable" id="complete-guide" style="margin-top:10px">Completar guia</button>`}</div>`}
-      ${tours.length ? `<h3 class="b" style="margin-top:20px">🎟️ Passeios com preço</h3>
+      ${tours.length ? `<h3 class="b" style="margin-top:20px" id="g-passeios">🎟️ Passeios com preço</h3>
         <div class="tours">${tours.map((x) => `<a class="card tour pressable rel" href="${esc(x.link)}" target="_blank" rel="noopener">
           ${favBtn("tour", x.link, { title: x.title, subtitle: `${d.name} · ${x.provider}${x.price ? ` · a partir de ${brl(x.price)}` : ""}`, photo: x.photo, link: x.link }, "over")}
           <span class="ph" ${bg(x.photo)}><span class="pill plain">${esc(x.provider)}</span></span>
@@ -393,20 +397,32 @@ function bindRequest(r) {
 function drawCosts(days) {
   const c = S.current;
   c.days = days;
-  const fl = c.flight?.price || 0, stay = c.hotelNight ? c.hotelNight * days : 0, fun = c.tourAvg ? c.tourAvg * Math.min(days, Math.ceil(days / 2.5)) : 0;
-  const total = (n) => fl + (c.hotelNight ? c.hotelNight * n : 0) + (c.tourAvg ? c.tourAvg * Math.min(n, Math.ceil(n / 2.5)) : 0);
+  const k = c.dest.facts?.costs || null; // estimativa diária (IA) quando não há preço real
+  const fl = c.flight?.price || 0;
+  const hotelPP = c.hotelNight || (k ? k.hotel_night_double / 2 : 0);         // por pessoa por noite (quarto duplo dividido)
+  const parts = (n) => ({
+    flight: fl,
+    stay: hotelPP * n,
+    food: k ? k.food_day * n : 0,
+    transport: k ? k.transport_day * n : 0,
+    fun: c.tourAvg ? c.tourAvg * Math.max(1, Math.round(n / 2)) : 0,         // um passeio pago a cada 2 dias
+  });
+  const total = (n) => Object.values(parts(n)).reduce((a, b) => a + b, 0);
   document.querySelectorAll("#days-pick button").forEach((b) => {
     const n = Number(b.dataset.n), on = n === days;
     b.className = `pressable ${on ? "bg-brand shadow-float" : "card"}`;
     b.innerHTML = `<p class="xs sb" style="opacity:${on ? .85 : 1};${on ? "" : "color:var(--muted-foreground)"}">${n} dias</p><p class="display xb" style="font-size:20px">${total(n) ? brl(total(n)) : "–"}</p><p class="tiny" style="opacity:.8;${on ? "" : "color:var(--muted-foreground)"}">por pessoa</p>`;
   });
-  const sum = fl + stay + fun || 1;
-  const row = (label, v, missing) => `<div class="cost-row"><div class="row between sm"><span>${label}</span><b>${v ? brl(v) : missing}</b></div><div class="cost-bar"><i style="width:${(v / sum) * 100}%"></i></div></div>`;
-  document.getElementById("breakdown").innerHTML = `<h3 class="b" style="margin-bottom:8px">Composição para ${days} dias</h3>
-    ${row("✈️ Passagem ida e volta", fl, `<a class="primary-t" href="#/nova?dest=${esc(c.dest.code)}&nome=${encodeURIComponent(c.dest.name)}">vigiar preço</a>`)}
-    ${row(`🏨 Hospedagem (${days} noites)`, stay, `<a class="primary-t" href="#/hospedagem?d=${esc(c.dest.code)}&nome=${encodeURIComponent(c.dest.name)}">comparar hotéis</a>`)}
-    ${row("🎟️ Passeios", fun, "–")}
-    <p class="xs muted" style="padding-top:8px">Estimativa por pessoa com preços reais: voo ${c.flight ? `(${c.flight.src})` : "ainda sem preço"}, hotel pela mediana das suas buscas (quarto duplo dividido) e um passeio a cada ~2 dias. Não inclui alimentação e transporte local.</p>`;
+  const v = parts(days), sum = total(days) || 1;
+  const row = (label, val, note, missing) => `<div class="cost-row"><div class="row between sm"><span>${label} <span class="tiny muted">${note}</span></span><b>${val ? brl(val) : missing}</b></div><div class="cost-bar"><i style="width:${(val / sum) * 100}%"></i></div></div>`;
+  const nome = encodeURIComponent(c.dest.name);
+  document.getElementById("breakdown").innerHTML = `<h3 class="b" style="margin-bottom:8px">Composição para ${days} dias, por pessoa</h3>
+    ${row("✈️ Passagem ida e volta", v.flight, c.flight ? "preço real" : "", `<a class="primary-t" href="#/nova?dest=${esc(c.dest.code)}&nome=${nome}">vigiar preço</a>`)}
+    ${row(`🏨 Hospedagem · ${days} noites`, v.stay, c.hotelNight ? "suas buscas" : k ? "estimativa" : "", `<a class="primary-t" href="#/hospedagem?d=${esc(c.dest.code)}&nome=${nome}">comparar hotéis</a>`)}
+    ${row("🍽️ Alimentação", v.food, k ? "estimativa" : "", "–")}
+    ${row("🚇 Transporte local", v.transport, k ? "estimativa" : "", "–")}
+    ${row(`🎟️ Passeios · ${Math.max(1, Math.round(days / 2))}`, v.fun, c.tourAvg ? "preço médio real" : "", "–")}
+    <p class="xs muted" style="padding-top:8px">Por pessoa, com quarto duplo dividido por 2. Passagem e passeios com preços reais; hospedagem real quando você já buscou hotéis aqui${k ? ", senão estimada" : ""}; comida e transporte ${k ? "estimados pela IA para esta cidade" : "ainda sem estimativa (o robô calcula em breve)"}.</p>`;
 }
 
 function openLightbox(start) {

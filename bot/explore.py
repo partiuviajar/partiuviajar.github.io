@@ -5,6 +5,7 @@ porque algumas consultas (pontos turísticos no Wikidata) levam dezenas de segun
 """
 
 import math
+import os
 import time
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -12,6 +13,7 @@ from urllib.parse import quote
 
 import requests
 
+import ai
 import experiences
 from sources import SourceError, aviasales
 
@@ -21,6 +23,7 @@ INTERNATIONAL_DEALS = 40
 NEW_DESTINATIONS_PER_RUN = 8
 ATTRACTIONS_PER_RUN = 2
 EXPERIENCES_PER_RUN = 2
+COSTS_PER_RUN = 4
 EXPERIENCES_REFRESH = timedelta(days=7)
 DESTINATION_REFRESH = timedelta(days=60)
 DEFAULT_ORIGIN = "RIO"
@@ -245,7 +248,7 @@ def _basic(code: str, countries: dict[str, str]) -> dict | None:
 def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[str]:
     """Prepara destinos novos (rotas primeiro, depois promoções) e pontos turísticos das rotas ou pedidos pelo app."""
     notes = []
-    known = {r["code"]: r for r in db.select("destinations", {"select": "code,name,qid,lat,lon,updated_at,attractions,attractions_at,attractions_requested_at,experiences_at"})}
+    known = {r["code"]: r for r in db.select("destinations", {"select": "code,name,country_name,qid,lat,lon,updated_at,facts,attractions,attractions_at,attractions_requested_at,experiences,experiences_at"})}
     deal_codes = [r["destination"] for r in db.select("deals", {"select": "destination", "order": "price.asc"})]
     stale = lambda r: not r.get("updated_at") or datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00")).replace(tzinfo=None) < datetime.utcnow() - DESTINATION_REFRESH
     todo = []
@@ -289,8 +292,10 @@ def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[st
 
     # passeios (GetYourGuide, Viator, Civitatis): rotas e pedidos do app, refeitos a cada 7 dias
     week_old = lambda ts: not ts or datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None) < datetime.utcnow() - EXPERIENCES_REFRESH
-    want = [c for c, r in known.items() if r.get("lat") and week_old(r.get("experiences_at")) and (
-        c in route_codes or r.get("attractions_requested_at"))]
+    # listas antigas sem "brl" vieram com preço em dólar do Viator: refaz
+    stale_cur = lambda r: any(not x.get("brl") for x in (r.get("experiences") or []))
+    want = [c for c, r in known.items() if r.get("lat") and (week_old(r.get("experiences_at")) or stale_cur(r)) and (
+        c in route_codes or r.get("attractions_requested_at") or r.get("experiences"))]
     for code in want[:EXPERIENCES_PER_RUN]:
         if time.monotonic() > deadline:
             break
@@ -301,6 +306,21 @@ def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[st
             notes.append(f"{code}: {len(items)} passeios" + (f" ({'; '.join(problems)})" if problems else ""))
         except Exception as e:
             notes.append(f"passeios {code}: {type(e).__name__}: {str(e)[:100]}")
+
+    # estimativa de custo diário (hotel, comida, transporte) para a conta do guia
+    if os.environ.get("GEMINI_API_KEY"):
+        need = [c for c, r in known.items() if r.get("lat") and r.get("facts") is not None and not (r.get("facts") or {}).get("costs")
+                and (c in route_codes or r.get("attractions_at"))]
+        for code in need[:COSTS_PER_RUN]:
+            if time.monotonic() > deadline:
+                break
+            r = known[code]
+            try:
+                facts = {**(r.get("facts") or {}), "costs": ai.cost_estimates(r.get("name") or code, r.get("country_name") or "")}
+                db.upsert("destinations", {"code": code, "facts": facts}, "code")
+                notes.append(f"{code}: custos estimados")
+            except Exception as e:
+                notes.append(f"custos {code}: {str(e)[:100]}")
     return notes
 
 

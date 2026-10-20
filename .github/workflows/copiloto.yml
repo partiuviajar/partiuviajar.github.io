@@ -1,0 +1,44 @@
+name: Copiloto
+
+# Disparado pelo Supabase quando você pede sugestões ao Copiloto no app.
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: "id do pedido (copilot_requests.id)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+
+      - run: pip install -r bot/requirements.txt
+
+      - name: Copiloto
+        working-directory: bot
+        env:
+          SUPABASE_URL: https://zukcutypxxpxbioxupss.supabase.co
+          APP_URL: https://vitorwangg.github.io/radar-voos/
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: https://github.com/vitorwangg/radar-voos
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REQUEST_ID: ${{ inputs.request }}
+        run: python copilot.py "$REQUEST_ID"

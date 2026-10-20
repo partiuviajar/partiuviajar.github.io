@@ -38,5 +38,6 @@ jobs:
           VAPID_SUBJECT: https://github.com/vitorwangg/radar-voos
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           REQUEST_ID: ${{ inputs.request }}
         run: python guide_job.py "$REQUEST_ID"

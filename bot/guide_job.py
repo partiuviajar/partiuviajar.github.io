@@ -11,6 +11,7 @@ import sys
 import traceback
 from datetime import datetime, timezone
 
+import ai
 import experiences
 import explore
 import notify
@@ -29,8 +30,12 @@ def run(db: DB, req_id: str):
         row = explore._basic(code, explore._countries())
         if not row:
             raise RuntimeError(f"cidade {code} não encontrada")
-        db.upsert("destinations", row, "code")
         name = row.get("name") or req.get("name") or code
+        try:
+            row["facts"] = {**(row.get("facts") or {}), "costs": ai.cost_estimates(name, row.get("country_name") or "")}
+        except Exception as e:
+            print(f"[custos] {e}")
+        db.upsert("destinations", row, "code")
         try:
             items = explore._attractions(row["lat"], row["lon"])
             db.upsert("destinations", {"code": code, "attractions": items, "attractions_at": now()}, "code")

@@ -17,6 +17,25 @@ URLS = {
     "Civitatis": "https://www.civitatis.com/br/procurar?q={q}",             # redireciona para /br/<cidade>/
 }
 PER_SOURCE = 8
+_RATES: dict | None = None
+
+
+def to_brl(amount, currency: str | None) -> float | None:
+    """Converte para real pela cotação do dia (o Viator responde em dólar mesmo no site brasileiro)."""
+    global _RATES
+    v = _num(amount)
+    if v is None:
+        return None
+    cur = (currency or "BRL").upper()
+    if cur == "BRL":
+        return v
+    if _RATES is None:
+        try:
+            _RATES = requests.get("https://open.er-api.com/v6/latest/BRL", timeout=20).json().get("rates") or {}
+        except Exception:
+            _RATES = {}
+    rate = _RATES.get(cur)
+    return round(v / rate, 2) if rate else None
 MAX_ITEMS = 18
 
 
@@ -38,11 +57,11 @@ def _num(v):
 NOT_TOURS = re.compile(r"seguro|chip|e-?sim|cart[aã]o sim", re.I)  # o Civitatis mistura produtos que não são passeios
 
 
-def _item(provider, title, price, rating, reviews, photo, link) -> dict | None:
+def _item(provider, title, price, rating, reviews, photo, link, currency="BRL") -> dict | None:
     if not title or not link or NOT_TOURS.search(title):
         return None
     rating = _num(rating)
-    return {"provider": provider, "title": title, "price": _num(price), "rating": round(rating, 2) if rating else None,
+    return {"provider": provider, "title": title, "price": to_brl(price, currency), "brl": True, "rating": round(rating, 2) if rating else None,
             "reviews": int(_num(reviews) or 0), "photo": photo, "link": link}
 
 
@@ -88,9 +107,10 @@ def _viator(html: str) -> list[dict]:
             href = re.search(r'href="(/pt-BR/tours/[^"?]+-%s)"' % re.escape(code), html)
             sizes = (it.get("defaultPhoto") or {}).get("sizes") or []
             rs = it.get("reviewSummary") or {}
-            out.append(_item("Viator", (it.get("title") or {}).get("text"), ((it.get("pricingInfo") or {}).get("fromPrice") or {}).get("amount"),
+            fp = (it.get("pricingInfo") or {}).get("fromPrice") or {}
+            out.append(_item("Viator", (it.get("title") or {}).get("text"), fp.get("amount"),
                              rs.get("exactRating"), rs.get("count"), next((z["url"] for z in sizes if z.get("width") == 480), None),
-                             "https://www.viator.com" + href.group(1) if href else None))
+                             "https://www.viator.com" + href.group(1) if href else None, fp.get("currency") or "USD"))
         if out:
             return out
     for j in _ld_blocks(html):
@@ -99,8 +119,9 @@ def _viator(html: str) -> list[dict]:
             it = li.get("item") or {}
             ar = it.get("aggregateRating") or {}
             image = it.get("image")
-            out.append(_item("Viator", it.get("name"), (it.get("offers") or {}).get("price"), ar.get("ratingValue"),
-                             ar.get("reviewCount"), image[0] if isinstance(image, list) else image, it.get("url")))
+            offer = it.get("offers") or {}
+            out.append(_item("Viator", it.get("name"), offer.get("price"), ar.get("ratingValue"),
+                             ar.get("reviewCount"), image[0] if isinstance(image, list) else image, it.get("url"), offer.get("priceCurrency") or "USD"))
     return out
 
 

@@ -290,8 +290,8 @@ export async function viewForm(id = null) {
     origin: r ? { code: r.origin, label: r.origin_label || r.origin } : { code: pre.get("orig") || "RIO", label: pre.get("orignome") || "Rio de Janeiro" },
     destination: r ? { code: r.destination, label: r.destination_label || r.destination } : pre.get("dest") ? { code: pre.get("dest"), label: pre.get("nome") || pre.get("dest") } : null,
     trip_type: r?.trip_type || "round_trip",
-    date_mode: r?.date_mode || (pre.get("mes") ? "month" : "month"),
-    adults: r?.adults || 1,
+    date_mode: r?.date_mode || (pre.get("de") ? "fixed" : "month"),
+    adults: r?.adults || Math.max(1, Math.min(9, Number(pre.get("adultos")) || 1)),
     max_stops: r ? (r.max_stops == null ? "" : String(r.max_stops)) : "",
     every: r?.check_every_hours || 3,
   };
@@ -312,8 +312,8 @@ export async function viewForm(id = null) {
       ${step(2, "Tipo de viagem", seg("seg-trip", [["round_trip", "Ida e volta"], ["one_way", "Só ida"]], form.trip_type))}
       ${step(3, "Datas", `${seg("seg-mode", [["fixed", "Data fixa"], ["month", "Mês inteiro"], ["long", "Viagem longa"]], form.date_mode)}
         <div data-show="fixed" class="grid2" style="gap:8px">
-          <label class="field"><span>Ida</span><input class="input" type="date" name="depart_date" min="${todayIso()}" value="${v(r?.depart_date)}"></label>
-          <label class="field" data-show="round_trip"><span>Volta</span><input class="input" type="date" name="return_date" min="${todayIso()}" value="${v(r?.return_date)}"></label>
+          <label class="field"><span>Ida</span><input class="input" type="date" name="depart_date" min="${todayIso()}" value="${v(r?.depart_date || pre.get("de"))}"></label>
+          <label class="field" data-show="round_trip"><span>Volta</span><input class="input" type="date" name="return_date" min="${todayIso()}" value="${v(r?.return_date || pre.get("ate"))}"></label>
         </div>
         <div data-show="month" class="grid2" style="gap:8px">
           <label class="field"><span>Mês da ida</span><input class="input" type="month" name="month" min="${todayIso().slice(0, 7)}" value="${v((r?.month || nextMonth).slice(0, 7))}"></label>
