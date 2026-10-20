@@ -1,6 +1,6 @@
 // Guide: globo + destinos (índice) e o guia de cada cidade, com dados reais
 // (fotos/pontos turísticos/passeios preparados pelo robô; clima e câmbio ao vivo; preços reais de voo e hotel).
-import { sb, S, q, esc, brl, ago, fmtShort, todayIso, addDays, daysBetween, isoDaysAgo, median, toast, flag, photo, bg, plain, MONTHS, parseDate, isoOf } from "../core.js";
+import { sb, S, q, cached, invalidate, favBtn, friendlyError, esc, brl, ago, fmtShort, todayIso, addDays, daysBetween, isoDaysAgo, median, toast, flag, photo, bg, plain, MONTHS, parseDate, isoOf } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, seg, bindSeg, secTitle, converter, bindConverter, autocomplete } from "../ui.js";
 
@@ -15,10 +15,11 @@ const gstate = { scope: "intl", focus: null, list: [] };
 let globe = null;
 
 export async function viewGuideIndex() {
-  const [dests, deals, routes] = await Promise.all([
-    q(sb.from("destinations").select("code,name,country_code,country_name,thumb,lat,lon,summary").not("lat", "is", null).limit(300)),
-    q(sb.from("deals").select("destination,price").order("price").limit(300)).catch(() => []),
+  const [dests, deals, routes, requests] = await Promise.all([
+    cached("guide:dests", () => q(sb.from("destinations").select("code,name,country_code,country_name,thumb,lat,lon,summary").not("lat", "is", null).limit(300)), 120000),
+    cached("deals", () => q(sb.from("deals").select("*").order("price").limit(300))).catch(() => []),
     q(sb.from("routes").select("destination,active")),
+    q(sb.from("guide_requests").select("code,name,status,created_at").order("created_at", { ascending: false }).limit(6)).catch(() => []),
   ]);
   const fromPrice = {};
   for (const d of deals) if (fromPrice[d.destination] == null) fromPrice[d.destination] = Number(d.price);
@@ -29,7 +30,8 @@ export async function viewGuideIndex() {
   Object.assign(gstate, { list, fromPrice, mine, focus: null });
   const chips = list.filter((d) => mine.has(d.code)).concat(list.filter((d) => !mine.has(d.code) && d.country_code !== "BR").slice(0, 8));
   return `<main class="page">
-    <div class="page-title center"><h1>Para onde vamos?</h1><p>Gire o globo ou toque num destino</p></div>
+    <div class="page-title center"><h1>Para onde vamos?</h1><p>Gire o globo, toque num destino ou busque qualquer cidade</p></div>
+    ${requests.length ? `<div class="city-chips">${requests.map((r) => `<a class="row" style="gap:6px" href="#/guide/${esc(r.code)}?nome=${encodeURIComponent(r.name || r.code)}">${r.status === "done" ? "✅" : r.status === "error" ? "⚠️" : "⏳"} ${esc(r.name || r.code)}</a>`).join("")}<a href="#/favoritos">❤️ Favoritos</a></div>` : `<div class="city-chips"><a href="#/favoritos">❤️ Seus favoritos</a></div>`}
     <div class="globe-wrap"><canvas id="globe"></canvas><div id="globe-card"></div></div>
     <div class="city-chips" id="city-chips">${chips.map((d) => `<button type="button" class="pressable" data-c="${esc(d.code)}">${flag(d.country_code)} ${esc(d.name)}</button>`).join("")}</div>
     <div class="search">${icon("search", 20)}<input id="g-search" type="search" autocomplete="off" placeholder="Buscar cidade ou país (ex.: Lisboa, Chile)"><button class="clear" id="g-clear" hidden aria-label="Limpar">${icon("x", 20)}</button>
@@ -80,7 +82,7 @@ viewGuideIndex.after = async () => {
     const local = gstate.list.filter((d) => plain(`${d.name} ${d.country_name}`).includes(term)).slice(0, 6);
     const extra = remote.filter((r) => !local.some((l) => l.code === r.code)).slice(0, 5);
     results.innerHTML = local.map((d) => `<a href="#/guide/${esc(d.code)}"><span class="thumb" ${bg(photo(d, 330))}></span><span class="grow"><p class="sb">${esc(d.name)}</p><p class="xs muted">${flag(d.country_code)} ${esc(d.country_name || "")}</p></span></a>`).join("")
-      + extra.map((r) => `<a href="#/guide/${esc(r.code)}"><span class="thumb" style="display:grid;place-items:center">${icon("map-pin", 18)}</span><span class="grow"><p class="sb">${esc(r.name)}</p><p class="xs muted">${esc(r.country_name || "")} · preparar guia</p></span></a>`).join("")
+      + extra.map((r) => `<a href="#/guide/${esc(r.code)}?nome=${encodeURIComponent(r.name)}"><span class="thumb" style="display:grid;place-items:center">${icon("map-pin", 18)}</span><span class="grow"><p class="sb">${esc(r.name)}</p><p class="xs muted">${esc(r.country_name || "")} · solicitar guia</p></span></a>`).join("")
       || `<p class="sm muted" style="padding:16px">Procurando “${esc(input.value)}”…</p>`;
     results.hidden = false;
   };
@@ -116,12 +118,12 @@ async function makeGlobe(canvas, list) {
   const resize = () => (width = canvas.offsetWidth);
   resize();
   const g = createGlobe(canvas, {
-    devicePixelRatio: Math.min(2, devicePixelRatio || 1), width: width * 2, height: width * 2, phi, theta,
-    dark: dark ? 1 : 0, diffuse: 1.4, mapSamples: 16000, mapBrightness: dark ? 5 : 8, mapBaseBrightness: 0.05,
+    devicePixelRatio: Math.min(1.5, devicePixelRatio || 1), width: width * 2, height: width * 2, phi, theta,
+    dark: dark ? 1 : 0, diffuse: 1.4, mapSamples: 12000, mapBrightness: dark ? 5 : 8, mapBaseBrightness: 0.05,
     baseColor: dark ? [0.25, 0.3, 0.55] : [0.86, 0.9, 1], glowColor: dark ? [0.25, 0.3, 0.7] : [0.75, 0.82, 1], markerColor: [0.83, 1, 0.23],
     markers: [{ location: RIO, size: 0.07 }, ...list.slice(0, 80).map((d) => ({ location: [d.lat, d.lon], size: 0.05 }))],
     onRender: (state) => {
-      if (!document.body.contains(canvas)) return;
+      if (!document.body.contains(canvas)) { setTimeout(() => g.destroy(), 0); return; }
       if (drag == null) {
         if (target) {
           const tp = Math.PI - ((target[1] * Math.PI) / 180 - Math.PI / 2), tt = (target[0] * Math.PI) / 180;
@@ -147,13 +149,15 @@ const firstSentence = (s, max = 90) => { const t = String(s || "").split(/(?<=\.
 // Guia de uma cidade
 // ---------------------------------------------------------------------------
 export async function viewGuide(code) {
-  let d = await q(sb.from("destinations").select("*").eq("code", code).maybeSingle());
-  const needPrep = !d?.attractions_at && (!d?.attractions_requested_at || Date.now() - new Date(d.attractions_requested_at) > 3600000);
-  if (needPrep) { try { await q(sb.from("destinations").upsert({ code, attractions_requested_at: new Date().toISOString() }, { onConflict: "code" })); } catch {} }
+  const [d, req] = await Promise.all([
+    q(sb.from("destinations").select("*").eq("code", code).maybeSingle()),
+    q(sb.from("guide_requests").select("*").eq("code", code).order("created_at", { ascending: false }).limit(1)).then((r) => r[0]).catch(() => null),
+  ]);
+  const preparing = req && ["pending", "running"].includes(req.status) && Date.now() - new Date(req.created_at) < 15 * 60000;
   if (!d?.lat) {
-    S.current = null;
+    S.current = { request: { code, name: S.params.get("nome") || req?.name || d?.name || code, preparing } };
     return `<main class="page"><a class="back" href="#/guide">${icon("arrow-left", 16)} Guide</a>
-      <div class="card pad center"><div style="font-size:40px">🧭</div><h2 class="lg xb">Preparando este guia…</h2><p class="sm muted" style="margin-top:4px">O robô junta fotos, pontos turísticos, passeios e informações práticas. Volte em ~15 minutos.</p></div></main>`;
+      <section class="card prep" id="prep">${prepBody(S.current.request, req)}</section></main>`;
   }
   const [deals, routes, hotelSearches, related] = await Promise.all([
     q(sb.from("deals").select("price,depart_date,return_date,origin").eq("destination", code).order("price").limit(5)).catch(() => []),
@@ -202,7 +206,8 @@ export async function viewGuide(code) {
         <div class="grow"><p class="sm sb muted">${flag(d.country_code)} ${esc(d.country_name || "")}</p>
           <h1 class="display xb" style="font-size:36px;line-height:40px">${esc(d.name)}</h1>
           <p class="muted">${esc(firstSentence(d.summary || "", 110))}</p></div>
-        <button class="card share-btn pressable" id="share" aria-label="Compartilhar">${icon("share-2", 20)}</button>
+        <div class="row" style="gap:8px">${favBtn("guide", code, { title: d.name, subtitle: d.country_name, photo: photo(d, 500), link: `#/guide/${code}` }, "big")}
+        <button class="card share-btn pressable" id="share" aria-label="Compartilhar">${icon("share-2", 20)}</button></div>
       </div>
       <div class="row wrap" style="gap:6px">${tags.map((t) => pill(esc(t), "primary")).join("")}</div>
       <nav class="sec-nav glass"><a href="#g-visao" data-a>Visão geral</a><a href="#g-clima" data-a>Clima</a><a href="#g-custos" data-a>Custos</a><a href="#g-pontos" data-a>O que fazer</a><a href="#g-info" data-a>Info prática</a></nav>
@@ -243,9 +248,12 @@ export async function viewGuide(code) {
               <a class="xs sb primary-t row" style="gap:2px;margin-left:auto" href="https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lon}" target="_blank" rel="noopener">${icon("map-pin", 12)} Mapa</a>
             </div></div>
         </article>`).join("")}</div>`
-        : `<div class="card pad sm muted">${d.attractions_at ? "Não encontramos pontos turísticos cadastrados aqui." : "Preparando a lista… o robô junta os pontos turísticos na próxima rodada (~15 min)."}</div>`}
+        : d.attractions_at ? `<div class="card pad sm muted">Não encontramos pontos turísticos cadastrados aqui.</div>`
+        : `<div class="card pad center"><p class="sm muted">${preparing ? "⏳ Preparando pontos turísticos e passeios… você recebe uma notificação quando ficar pronto." : "Os pontos turísticos e passeios desta cidade ainda não foram preparados."}</p>
+          ${preparing ? "" : `<button class="btn primary pressable" id="complete-guide" style="margin-top:10px">Completar guia</button>`}</div>`}
       ${tours.length ? `<h3 class="b" style="margin-top:20px">🎟️ Passeios com preço</h3>
-        <div class="tours">${tours.map((x) => `<a class="card tour pressable" href="${esc(x.link)}" target="_blank" rel="noopener">
+        <div class="tours">${tours.map((x) => `<a class="card tour pressable rel" href="${esc(x.link)}" target="_blank" rel="noopener">
+          ${favBtn("tour", x.link, { title: x.title, subtitle: `${d.name} · ${x.provider}${x.price ? ` · a partir de ${brl(x.price)}` : ""}`, photo: x.photo, link: x.link }, "over")}
           <span class="ph" ${bg(x.photo)}><span class="pill plain">${esc(x.provider)}</span></span>
           <div class="tour-body"><p class="tour-title">${esc(x.title)}</p>
             <p class="tiny muted">${x.rating ? `⭐ ${Number(x.rating).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}` : ""}${x.reviews ? ` · ${Number(x.reviews).toLocaleString("pt-BR")} avaliações` : ""}</p>
@@ -272,7 +280,9 @@ export async function viewGuide(code) {
 
 viewGuide.after = async () => {
   const c = S.current;
+  if (c?.request) return bindRequest(c.request);
   if (!c?.dest?.lat) return;
+  document.getElementById("complete-guide")?.addEventListener("click", (e) => requestGuide(c.dest.code, c.dest.name, e.currentTarget));
   const d = c.dest;
   const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
   // compartilhar
@@ -335,6 +345,50 @@ viewGuide.after = async () => {
     set("climate-text", esc(text));
   } catch { set("climate-text", "Não foi possível carregar o histórico do clima."); set("best-months", ""); }
 };
+
+// ---------------------------------------------------------------------------
+// "Solicitar guia": o Supabase aciona o robô na hora; fica pronto em ~2 min e chega notificação
+// ---------------------------------------------------------------------------
+function prepBody(r, req) {
+  if (r.preparing) {
+    return `<div class="spin"></div><h2 class="lg xb">Preparando o guia de ${esc(r.name)}…</h2>
+      <p class="sm muted" style="margin-top:6px">Buscando fotos, pontos turísticos, passeios e avaliações em várias fontes. Fica pronto em até 10 min e <b>avisamos por notificação</b>, pode sair desta tela.</p>
+      <p class="xs muted" style="margin-top:10px">Esta página atualiza sozinha.</p>`;
+  }
+  return `<div style="font-size:44px">🧭</div><h2 class="lg xb">Ainda não temos o guia de ${esc(r.name)}</h2>
+    <p class="sm muted" style="margin:6px 0 16px">Montamos seu guia buscando fotos, pontos turísticos, passeios e avaliações em várias fontes. Fica pronto em <b>até 10 min</b> e avisamos por notificação.</p>
+    ${req?.status === "error" ? `<p class="hint bad" style="margin-bottom:12px">A última tentativa falhou: ${esc(req.error || "erro desconhecido")}</p>` : ""}
+    <button class="btn big bg-brand shadow-float pressable" id="ask-guide" style="font-size:16px">${icon("earth", 20)} Solicitar guia</button>`;
+}
+
+async function requestGuide(code, name, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    await q(sb.from("guide_requests").insert({ code, name }));
+    invalidate("guide:");
+    toast("🧭 Pedido feito! Em até 10 min o guia fica pronto e avisamos por notificação.", 5000);
+    dispatchEvent(new HashChangeEvent("hashchange"));
+  } catch (err) { if (btn) btn.disabled = false; toast(friendlyError(err)); }
+}
+
+function bindRequest(r) {
+  document.getElementById("ask-guide")?.addEventListener("click", (e) => requestGuide(r.code, r.name, e.currentTarget));
+  if (!r.preparing) return;
+  // confere a cada 8 s se ficou pronto
+  const myHash = location.hash;
+  const timer = setInterval(async () => {
+    if (location.hash !== myHash) return clearInterval(timer);
+    try {
+      const req = (await q(sb.from("guide_requests").select("status").eq("code", r.code).order("created_at", { ascending: false }).limit(1)))[0];
+      if (req && req.status !== "pending" && req.status !== "running") {
+        clearInterval(timer);
+        invalidate("guide:");
+        if (req.status === "done") toast("🧭 Guia pronto!");
+        dispatchEvent(new HashChangeEvent("hashchange"));
+      }
+    } catch {}
+  }, 8000);
+}
 
 function drawCosts(days) {
   const c = S.current;

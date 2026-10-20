@@ -1,8 +1,10 @@
 // Dados das rotas já resumidos para as telas (Home e Rotas usam o mesmo cálculo).
-import { sb, q, isoDaysAgo, todayIso, median, loadDestinations } from "./core.js";
+import { sb, q, isoDaysAgo, todayIso, median, loadDestinations, cached } from "./core.js";
 import { inScope, lastCheck, cheapest, dayChange, buyVerdict, tripStart } from "./ui.js";
 
-export async function loadRouteStats(days = 10) {
+export const loadRouteStats = (days = 10) => cached(`routes:${days}`, () => load(days));
+
+async function load(days) {
   const [routes, latest, totals, trend] = await Promise.all([
     q(sb.from("routes").select("*").order("created_at")),
     q(sb.from("route_latest").select("route_id,depart_date,return_date,price,normal_price,checked_at,airline,stops").is("leg", null).gte("depart_date", todayIso()).limit(2000)),

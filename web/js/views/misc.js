@@ -1,8 +1,8 @@
 // Alertas, Ajustes e Login.
-import { sb, S, q, esc, brl, ago, fmtShort, fmtDateTime, toast, friendlyError, userName } from "../core.js";
+import { sb, S, q, esc, brl, ago, fmtShort, fmtDateTime, toast, friendlyError, userName, favs, loadFavs, favBtn, bg } from "../core.js";
 import { VAPID_PUBLIC_KEY } from "../../config.js";
 import { icon } from "../icons.js";
-import { pill } from "../ui.js";
+import { pill, seg, bindSeg } from "../ui.js";
 
 const rerender = () => dispatchEvent(new HashChangeEvent("hashchange"));
 
@@ -36,6 +36,39 @@ export async function viewAlerts() {
     }).join("")}</div>
   </main>`;
 }
+
+// ---------------------------------------------------------------------------
+// Favoritos: guias, experiências e hospedagens salvos com o coração
+// ---------------------------------------------------------------------------
+let favTab = "guide";
+const FAV_TABS = [["guide", "🧭 Guias"], ["tour", "🎟️ Experiências"], ["hotel", "🏨 Hospedagens"]];
+
+export async function viewFavorites() {
+  await loadFavs(true);
+  return `<main class="page">
+    <div class="page-title"><h1>Favoritos</h1><p>Guias, experiências e hospedagens que você salvou com o ❤️.</p></div>
+    ${seg("fav-tabs", FAV_TABS.map(([k, l]) => [k, `${l} <span class="muted">${favs.rows.filter((r) => r.kind === k).length}</span>`]), favTab)}
+    <div id="fav-list"></div>
+  </main>`;
+}
+viewFavorites.after = () => {
+  const draw = () => {
+    const list = favs.rows.filter((r) => r.kind === favTab);
+    const empty = { guide: "Abra um guia no Guide e toque no ❤️ ao lado do nome da cidade.", tour: "Nos guias, toque no ❤️ de um passeio para guardar aqui.", hotel: "Na busca de hotéis, toque no ❤️ da foto do hotel para guardar aqui." }[favTab];
+    document.getElementById("fav-list").innerHTML = list.length ? list.map((f, i) => {
+      const external = /^https?:/.test(f.link || "");
+      return `<div class="card pad-s row fade-up rel" style="gap:12px;margin-top:${i ? 12 : 0}px;animation-delay:${i * 50}ms">
+        <a class="row grow" style="gap:12px" href="${esc(f.link || "#/")}" ${external ? 'target="_blank" rel="noopener"' : ""}>
+          <span class="emoji-tile" ${bg(f.photo)}>${f.photo ? "" : favTab === "guide" ? "🧭" : favTab === "tour" ? "🎟️" : "🏨"}</span>
+          <span class="grow"><p class="b" style="line-height:1.25">${esc(f.title)}</p>${f.subtitle ? `<p class="xs muted">${esc(f.subtitle)}</p>` : ""}<p class="tiny muted">salvo ${ago(f.created_at)}${external ? " · abre no site ↗" : ""}</p></span>
+        </a>
+        ${favBtn(f.kind, f.key, { title: f.title, subtitle: f.subtitle, photo: f.photo, link: f.link })}
+      </div>`;
+    }).join("") : `<div class="card pad center"><div style="font-size:36px">❤️</div><p class="sm muted" style="margin-top:6px">${empty}</p></div>`;
+  };
+  bindSeg("fav-tabs", (v) => { favTab = v; draw(); });
+  draw();
+};
 
 // ---------------------------------------------------------------------------
 // Ajustes

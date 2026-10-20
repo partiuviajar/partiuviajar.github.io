@@ -1,5 +1,5 @@
 // Service worker: deixa o app abrir rápido/offline e recebe as notificações do robô.
-const CACHE = "radar-v3";
+const CACHE = "radar-v4";
 const SHELL = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {

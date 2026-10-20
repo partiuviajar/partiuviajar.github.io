@@ -1,5 +1,5 @@
 // Rotas: lista, detalhe, cadastro/edição e Explorar promoções.
-import { sb, S, q, esc, brl, ago, fmtDay, fmtShort, fmtDateTime, todayIso, addDays, daysBetween, isoDaysAgo, median, toast, friendlyError,
+import { sb, S, q, cached, invalidate, esc, brl, ago, fmtDay, fmtShort, fmtDateTime, todayIso, addDays, daysBetween, isoDaysAgo, median, toast, friendlyError,
   place, stopsLabel, sourceLabel, photo, bg, loadDestinations, airlineName, pct } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, seg, bindSeg, thermo, sparkline, changePill, verdictPill, verdictCard, buyVerdict, tripStart, countdownText, tripRange,
@@ -130,12 +130,13 @@ viewRoute.after = (id) => {
   const { route } = S.current;
   document.getElementById("act-check")?.addEventListener("click", async (e) => {
     e.currentTarget.disabled = true;
-    try { await q(sb.from("routes").update({ check_requested_at: new Date().toISOString() }).eq("id", id)); toast("✅ Verificação na fila: resultado em até ~15 min."); }
+    try { await q(sb.from("routes").update({ check_requested_at: new Date().toISOString() }).eq("id", id)); invalidate("routes"); toast("✅ Verificação na fila: resultado em até ~15 min."); }
     catch (err) { toast(friendlyError(err)); }
   });
   document.getElementById("act-toggle").addEventListener("click", async () => {
     try {
       await q(sb.from("routes").update({ active: !route.active, check_requested_at: new Date().toISOString(), last_error: null }).eq("id", id));
+      invalidate("routes");
       toast(route.active ? "Rota pausada" : "Rota reativada");
       dispatchEvent(new HashChangeEvent("hashchange"));
     } catch (err) { toast(friendlyError(err), 5000); }
@@ -143,7 +144,7 @@ viewRoute.after = (id) => {
   const del = document.getElementById("act-delete");
   del.addEventListener("click", async () => {
     if (!del.dataset.confirm) { del.dataset.confirm = "1"; del.querySelector("span").textContent = "Toque de novo"; return; }
-    try { await q(sb.from("routes").delete().eq("id", id)); toast("Rota apagada"); location.hash = "#/rotas"; }
+    try { await q(sb.from("routes").delete().eq("id", id)); invalidate("routes"); toast("Rota apagada"); location.hash = "#/rotas"; }
     catch (err) { toast(friendlyError(err)); }
   });
   bindSeg("series-seg", (v) => { S.current.series = v; document.getElementById("long-box").innerHTML = longBody(); bindLong(); });
@@ -469,6 +470,7 @@ async function saveRoute(e) {
     } else {
       id = (await q(sb.from("routes").insert({ ...row, active: true }).select("id").single())).id;
     }
+    invalidate("routes");
     toast(form.id ? "✅ Rota atualizada! Nova verificação em até ~15 min." : "✅ Rota criada! O robô já vai começar a vigiar.", 4500);
     location.hash = `#/rota/${id}`;
   } catch (err) {
@@ -484,7 +486,7 @@ const explore = { scope: "intl", origin: null };
 
 export async function viewExplore() {
   const [deals, routes, settings] = await Promise.all([
-    q(sb.from("deals").select("*").order("price").limit(300)),
+    cached("deals", () => q(sb.from("deals").select("*").order("price").limit(300))),
     q(sb.from("routes").select("origin,origin_label")),
     q(sb.from("settings").select("deals_refreshed_at").eq("id", 1).maybeSingle()),
   ]);

@@ -1,5 +1,5 @@
 // Home: banner em slide, últimas atualizações, conversor, atalhos, promoção do dia, guias e dica.
-import { sb, S, q, esc, brl, ago, fmtShort, daysBetween, flag, photo, bg, userName, loadDestinations, place } from "../core.js";
+import { sb, S, q, cached, esc, brl, ago, fmtShort, daysBetween, flag, photo, bg, userName, loadDestinations, place } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, thermo, changeArrow, converter, bindConverter, countdownText, daysLeft, priceFor, bestDates } from "../ui.js";
 import { loadRouteStats } from "../data.js";
@@ -17,8 +17,8 @@ let heroTimer = null;
 export async function viewHome() {
   const [{ stats, dests }, deals, lastAlert] = await Promise.all([
     loadRouteStats(),
-    q(sb.from("deals").select("*").order("price").limit(200)).catch(() => []),
-    q(sb.from("alerts").select("price,created_at,route_id,depart_date,return_date,routes(origin_label,destination_label,origin,destination)").order("created_at", { ascending: false }).limit(1)).catch(() => []),
+    cached("deals", () => q(sb.from("deals").select("*").order("price").limit(300))).catch(() => []),
+    cached("alerts:last", () => q(sb.from("alerts").select("price,created_at,route_id,depart_date,return_date,routes(origin_label,destination_label,origin,destination)").order("created_at", { ascending: false }).limit(1)), 30000).catch(() => []),
   ]);
   const intl = deals.filter((d) => d.country_code !== "BR");
   const extra = await loadDestinations(intl.slice(0, 30).map((d) => d.destination));

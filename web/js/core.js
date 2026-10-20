@@ -78,6 +78,18 @@ export function friendlyError(error) {
   return m;
 }
 
+// cache curto das leituras pesadas: trocar de aba fica instantâneo; quem altera dados chama invalidate()
+const memo = new Map();
+export function cached(key, fn, ttl = 60000) {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
+  const value = Promise.resolve().then(fn);
+  memo.set(key, { at: Date.now(), value });
+  value.catch(() => memo.delete(key));
+  return value;
+}
+export const invalidate = (prefix = "") => { for (const k of [...memo.keys()]) if (k.startsWith(prefix)) memo.delete(k); };
+
 let toastTimer;
 export function toast(msg, ms = 3500) {
   const el = document.getElementById("toast");
@@ -104,6 +116,49 @@ export async function loadDestinations(codes, cols = "code,name,country_code,cou
 // miniaturas da Wikimedia aceitam alguns tamanhos fixos (330, 500, 960, 1280…)
 export const photo = (d, size = 500) => (d?.thumb ? d.thumb.replace(/\/\d+px-/, `/${size}px-`) : null);
 export const bg = (url) => (url ? `style="background-image:url('${esc(url)}')"` : "");
+
+// ---------------------------------------------------------------------------
+// Favoritos (guias, passeios e hospedagens)
+// ---------------------------------------------------------------------------
+export const favs = { rows: [], set: new Set(), loaded: false };
+const favKey = (kind, key) => `${kind}:${key}`;
+export async function loadFavs(force = false) {
+  if (favs.loaded && !force) return favs;
+  try {
+    favs.rows = await q(sb.from("favorites").select("*").order("created_at", { ascending: false }));
+    favs.set = new Set(favs.rows.map((r) => favKey(r.kind, r.key)));
+  } catch { favs.rows = []; favs.set = new Set(); }
+  favs.loaded = true;
+  return favs;
+}
+export const isFav = (kind, key) => favs.set.has(favKey(kind, key));
+// botão de coração: os dados vão nos atributos; app.js trata o clique em qualquer tela
+export function favBtn(kind, key, { title, subtitle = "", photo = "", link = "" }, cls = "") {
+  const on = isFav(kind, key);
+  return `<button type="button" class="fav-btn ${cls} ${on ? "on" : ""}" aria-pressed="${on}" aria-label="${on ? "Remover dos favoritos" : "Salvar nos favoritos"}"
+    data-kind="${esc(kind)}" data-key="${esc(key)}" data-title="${esc(title)}" data-sub="${esc(subtitle)}" data-photo="${esc(photo || "")}" data-link="${esc(link || "")}">${HEART}</button>`;
+}
+const HEART = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>`;
+export const heartIcon = HEART;
+export async function toggleFav(btn) {
+  const { kind, key, title, sub, photo, link } = btn.dataset;
+  const on = !isFav(kind, key);
+  const paint = (v) => document.querySelectorAll(".fav-btn").forEach((b) => {
+    if (b.dataset.kind === kind && b.dataset.key === key) { b.classList.toggle("on", v); b.setAttribute("aria-pressed", String(v)); }
+  });
+  paint(on);
+  try {
+    if (on) {
+      const row = await q(sb.from("favorites").upsert({ kind, key, title, subtitle: sub || null, photo: photo || null, link: link || null }, { onConflict: "kind,key" }).select("*").single());
+      favs.rows.unshift(row); favs.set.add(favKey(kind, key));
+      toast("❤️ Salvo nos favoritos");
+    } else {
+      await q(sb.from("favorites").delete().eq("kind", kind).eq("key", key));
+      favs.rows = favs.rows.filter((r) => !(r.kind === kind && r.key === key)); favs.set.delete(favKey(kind, key));
+      toast("Removido dos favoritos");
+    }
+  } catch (err) { paint(!on); toast(friendlyError(err)); }
+}
 
 // nome de quem usa (Ajustes → "Como quer ser chamado")
 export const userName = () => S.session?.user?.user_metadata?.name || "viajante";

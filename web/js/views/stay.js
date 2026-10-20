@@ -1,5 +1,5 @@
 // Hospedagem: busca de hotéis/hostels (o robô compara os sites no Google Hotels) e o resultado.
-import { sb, S, q, esc, brl, ago, fmtShort, fmtDay, todayIso, addDays, daysBetween, toast, friendlyError, place, photo, bg, loadDestinations } from "../core.js";
+import { sb, S, q, favBtn, esc, brl, ago, fmtShort, fmtDay, todayIso, addDays, daysBetween, toast, friendlyError, place, photo, bg, loadDestinations } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, seg, bindSeg, secTitle, stayRange, autocomplete, back } from "../ui.js";
 
@@ -192,6 +192,7 @@ function hotelCard(h, i, nights) {
     </div>`;
   return `<article class="card hotel fade-up" style="animation-delay:${i * 60}ms">
     <div class="hotel-photo"><span class="ph" ${bg(h.image)}></span><span class="bg-fade"></span>
+      ${favBtn("hotel", `${h.name}|${S.current.hotelSearch.city_name}`, { title: h.name, subtitle: `${S.current.hotelSearch.city_name}${h.stars ? ` · ${h.stars}★` : ""}${min ? ` · a partir de ${brl(min)}/noite` : ""}`, photo: h.image, link: h.page || "" }, "over")}
       ${h.stars ? `<span class="stars">${Array.from({ length: h.stars }, () => icon("star", 16)).join("")}</span>` : ""}</div>
     <div class="hotel-body">
       <div><h3 class="lg b">${esc(h.name)}</h3><p class="xs muted">${h.rating ? `⭐ ${Number(h.rating).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}/5` : ""}${h.reviews ? ` · ${Number(h.reviews).toLocaleString("pt-BR")} avaliações` : ""}</p></div>

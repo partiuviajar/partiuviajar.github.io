@@ -1,13 +1,14 @@
 // Radar de Voos: roteador e casca do app (cabeçalho, menu, status do robô).
-import { sb, S, q, esc, friendlyError, fmtDateTime } from "./js/core.js";
+import { sb, S, q, esc, friendlyError, fmtDateTime, invalidate, loadFavs, toggleFav, heartIcon } from "./js/core.js";
 import { icon } from "./js/icons.js";
 import { viewHome } from "./js/views/home.js";
 import { viewRoutes, viewRoute, viewForm, viewExplore } from "./js/views/routes.js";
 import { viewGuideIndex, viewGuide } from "./js/views/guide.js";
 import { viewStay, viewHotels } from "./js/views/stay.js";
-import { viewAlerts, viewSettings, viewLogin } from "./js/views/misc.js";
+import { viewAlerts, viewSettings, viewLogin, viewFavorites } from "./js/views/misc.js";
 
 const $view = document.getElementById("view");
+const SKELETON = `<main class="page"><div class="skeleton" style="height:180px;border-radius:var(--r-3xl)"></div><div class="skeleton" style="height:96px"></div><div class="skeleton" style="height:96px"></div></main>`;
 
 // cada tela devolve o HTML; se tiver .after, roda depois de desenhar (liga botões etc.)
 const ROUTES = [
@@ -26,6 +27,7 @@ const ROUTES = [
   [/^#\/hoteis\/([\w-]+)$/, viewHotels],
   [/^#\/alertas$/, viewAlerts],
   [/^#\/config$/, viewSettings],
+  [/^#\/favoritos$/, viewFavorites],
 ];
 
 const TABS = [
@@ -45,6 +47,7 @@ function shell(hash, logged) {
     return `<a class="tab pressable ${on ? "active" : ""}" href="${href}"><span class="tab-ic">${icon(ic, 20, "", on ? 2.4 : 2)}</span><span>${label}</span>${label === "Alertas" && S.newAlerts ? `<span class="tab-badge">${S.newAlerts}</span>` : ""}</a>`;
   }).join("");
   document.getElementById("settings-btn").classList.toggle("on", hash.startsWith("#/config"));
+  document.getElementById("favs-btn").classList.toggle("on", hash.startsWith("#/favoritos"));
 }
 
 async function render() {
@@ -58,13 +61,17 @@ async function render() {
   const match = ROUTES.find(([re]) => re.test(hash));
   if (!match) { location.replace("#/"); return; }
   const args = hash.match(match[0]).slice(1);
+  // se a tela demorar, mostra esqueleto na hora (antes ficava parado na tela anterior)
+  const slow = setTimeout(() => { if (seq === S.seq) $view.innerHTML = SKELETON; }, 120);
   try {
     const html = await match[1](...args);
+    clearTimeout(slow);
     if (seq !== S.seq) return;
     if (typeof html === "string") $view.innerHTML = html;
     window.scrollTo(0, 0);
     await match[1].after?.(...args);
   } catch (e) {
+    clearTimeout(slow);
     if (seq !== S.seq) return;
     console.error(e);
     $view.innerHTML = `<main class="page"><div class="card pad center"><h1 class="lg xb">Essa página não carregou</h1><p class="sm muted" style="margin:6px 0 14px">${esc(friendlyError(e))}</p>
@@ -92,24 +99,34 @@ async function updateBotStatus() {
 
 document.getElementById("brand-logo").innerHTML = icon("radar", 20);
 document.getElementById("settings-btn").innerHTML = icon("settings", 18);
+document.getElementById("favs-btn").innerHTML = heartIcon.replace('width="20" height="20"', 'width="18" height="18"');
+// coração em qualquer tela (fica dentro de cartões-link: não deixa abrir o link)
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".fav-btn");
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  toggleFav(b);
+}, true);
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW", e));
 
 sb.auth.onAuthStateChange((event, s) => {
   const was = !!S.session;
   S.session = s;
-  if (event === "SIGNED_IN" && !was) { location.hash = "#/"; render(); updateBotStatus(); }
+  if (event === "SIGNED_IN" && !was) { location.hash = "#/"; loadFavs(true).then(render); updateBotStatus(); }
   if (event === "SIGNED_OUT") render();
 });
 window.addEventListener("hashchange", render);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible" || !S.session) return;
+  invalidate();
   updateBotStatus();
   if (/^#\/(rotas|rota\/|alertas)|^#\/?$/.test(location.hash || "#/")) render();
 });
 
 const { data } = await sb.auth.getSession();
 S.session = data.session;
+if (S.session) await loadFavs();
 render();
 if (S.session) updateBotStatus();
 setInterval(() => S.session && updateBotStatus(), 5 * 60000);
