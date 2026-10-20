@@ -111,8 +111,8 @@ def search_list(city: str, ts: str, kind: str = "hotel") -> list[dict]:
             h = next(iter(item[1].values()))[0]
         except (StopIteration, AttributeError, IndexError, TypeError):
             continue
-        if not h or not isinstance(h[1], str) or _g(h, 7, 0, 0) is None:
-            continue  # sem nota: em geral é aluguel de temporada
+        if not h or not isinstance(h[1], str) or _g(h, 14) == 2 or _g(h, 7, 0, 0) is None:
+            continue  # aluguel de temporada (h[14] == 2) ou sem nota
         latlng = _g(h, 2, 0) or [None, None]
         hotels.append({
             "name": h[1], "stars": _g(h, 3, 1), "rating": _g(h, 7, 0, 0), "reviews": _g(h, 7, 0, 1),

@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 import requests
 
+import experiences
 from sources import SourceError, aviasales
 
 DEALS_EVERY = timedelta(hours=6)
@@ -19,6 +20,8 @@ DOMESTIC_DEALS = 30
 INTERNATIONAL_DEALS = 40
 NEW_DESTINATIONS_PER_RUN = 8
 ATTRACTIONS_PER_RUN = 2
+EXPERIENCES_PER_RUN = 2
+EXPERIENCES_REFRESH = timedelta(days=7)
 DESTINATION_REFRESH = timedelta(days=60)
 DEFAULT_ORIGIN = "RIO"
 HEADERS = {"User-Agent": "radar-voos/1.0 (https://github.com/vitorwangg/radar-voos)"}
@@ -242,7 +245,7 @@ def _basic(code: str, countries: dict[str, str]) -> dict | None:
 def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[str]:
     """Prepara destinos novos (rotas primeiro, depois promoções) e pontos turísticos das rotas ou pedidos pelo app."""
     notes = []
-    known = {r["code"]: r for r in db.select("destinations", {"select": "code,qid,lat,lon,updated_at,attractions,attractions_at,attractions_requested_at"})}
+    known = {r["code"]: r for r in db.select("destinations", {"select": "code,name,qid,lat,lon,updated_at,attractions,attractions_at,attractions_requested_at,experiences_at"})}
     deal_codes = [r["destination"] for r in db.select("deals", {"select": "destination", "order": "price.asc"})]
     stale = lambda r: not r.get("updated_at") or datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00")).replace(tzinfo=None) < datetime.utcnow() - DESTINATION_REFRESH
     todo = []
@@ -283,7 +286,31 @@ def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[st
             notes.append(f"{code}: {len(items)} pontos turísticos")
         except Exception as e:
             notes.append(f"pontos turísticos {code}: {type(e).__name__}: {str(e)[:100]}")
+
+    # passeios (GetYourGuide, Viator, Civitatis): rotas e pedidos do app, refeitos a cada 7 dias
+    week_old = lambda ts: not ts or datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None) < datetime.utcnow() - EXPERIENCES_REFRESH
+    want = [c for c, r in known.items() if r.get("lat") and week_old(r.get("experiences_at")) and (
+        c in route_codes or r.get("attractions_requested_at"))]
+    for code in want[:EXPERIENCES_PER_RUN]:
+        if time.monotonic() > deadline:
+            break
+        r = known[code]
+        try:
+            items, problems = experiences.search([r.get("name"), _english_name(r.get("qid"))])
+            db.upsert("destinations", {"code": code, "experiences": items, "experiences_at": datetime.utcnow().isoformat() + "Z"}, "code")
+            notes.append(f"{code}: {len(items)} passeios" + (f" ({'; '.join(problems)})" if problems else ""))
+        except Exception as e:
+            notes.append(f"passeios {code}: {type(e).__name__}: {str(e)[:100]}")
     return notes
+
+
+def _english_name(qid: str | None) -> str | None:
+    if not qid:
+        return None
+    try:
+        return _get(f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json")["entities"][qid]["labels"]["en"]["value"]
+    except Exception:
+        return None
 
 
 def run(db, routes: list[dict], settings: dict, now: datetime, deadline: float) -> list[str]:

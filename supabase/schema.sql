@@ -254,6 +254,9 @@ create table if not exists public.destinations (
   attractions_requested_at timestamptz, -- o app pede; o robô prepara na próxima rodada
   updated_at timestamptz
 );
+alter table public.destinations
+  add column if not exists experiences jsonb,             -- passeios (GetYourGuide, Viator, Civitatis)
+  add column if not exists experiences_at timestamptz;
 
 alter table public.settings add column if not exists deals_refreshed_at timestamptz;
 

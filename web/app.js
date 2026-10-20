@@ -881,8 +881,35 @@ async function viewDestination(code) {
       <p class="muted tiny">Ordenados pela fama (em quantas Wikipedias aparecem). Fotos: Wikimedia Commons.</p>`
       : `<div class="card muted small">${d.attractions_at ? "Não encontramos pontos turísticos cadastrados aqui." : "Preparando a lista… o robô junta os pontos turísticos na próxima rodada (~15 min)."}</div>`}
 
+    <h2>🎟️ Passeios e experiências</h2>
+    ${experiencesBlock(d)}
+
     <h2 id="hoteis">🏨 Hotéis e hostels</h2>
     ${hotelForm(d)}`;
+}
+
+const TOUR_SITES = [
+  ["GetYourGuide", (c) => `https://www.getyourguide.com/pt-br/s/?q=${encodeURIComponent(c)}`],
+  ["Civitatis", (c) => `https://www.civitatis.com/br/procurar?q=${encodeURIComponent(c)}`],
+  ["Viator", (c) => `https://www.viator.com/pt-BR/searchResults/all?text=${encodeURIComponent(c)}`],
+];
+
+function experiencesBlock(d) {
+  const items = d.experiences || [];
+  const sites = `<div class="fab-row" style="margin-top:10px">${TOUR_SITES.map(([n, url]) => `<a class="btn sm" href="${esc(url(d.name))}" target="_blank" rel="noopener">${n} ↗</a>`).join("")}</div>`;
+  if (!items.length) {
+    return `<div class="card small">${d.experiences_at ? "Não encontramos passeios com preço para esta cidade." : "Preparando a lista de passeios… o robô busca no GetYourGuide, Viator e Civitatis na próxima rodada (~15 min)."}
+      <div class="muted tiny" style="margin-top:8px">Enquanto isso, veja direto nos sites:</div>${sites}</div>`;
+  }
+  return `<div class="tours">${items.map((x) => `<a class="tour" href="${esc(x.link)}" target="_blank" rel="noopener">
+      <div class="tour-photo" ${bgPhoto(x.photo)}><span class="badge photo-badge">${esc(x.provider)}</span></div>
+      <div class="tour-body">
+        <div class="tour-title">${esc(x.title)}</div>
+        <div class="muted tiny">${x.rating ? `⭐ ${Number(x.rating).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}` : ""}${x.reviews ? ` · ${Number(x.reviews).toLocaleString("pt-BR")} avaliações` : ""}</div>
+        <div class="tour-price">a partir de <b>${brl(x.price)}</b></div>
+      </div>
+    </a>`).join("")}</div>
+    <div class="card small" style="margin-top:10px"><span class="muted tiny">Os mais avaliados de cada site, preço por pessoa. Ver todos:</span>${sites}</div>`;
 }
 
 function hotelForm(d) {

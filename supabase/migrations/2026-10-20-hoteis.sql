@@ -1,4 +1,4 @@
--- Comparador de hotéis sob demanda.
+-- Comparador de hotéis sob demanda + passeios dos destinos.
 -- O app grava um pedido em hotel_searches; o gatilho abaixo dispara na hora o workflow
 -- "Busca de hotéis" no GitHub (com a mesma chave do despertador do robô), que preenche os resultados.
 -- Cole no SQL Editor do Supabase e clique em Run. Pode rodar de novo sem problema.
@@ -43,3 +43,8 @@ end $$;
 drop trigger if exists hotel_search_dispatch on public.hotel_searches;
 create trigger hotel_search_dispatch after insert on public.hotel_searches
   for each row execute function public.dispatch_hotel_search();
+
+-- Passeios e experiências de cada destino (GetYourGuide, Viator, Civitatis), preparados pelo robô
+alter table public.destinations
+  add column if not exists experiences jsonb,
+  add column if not exists experiences_at timestamptz;
