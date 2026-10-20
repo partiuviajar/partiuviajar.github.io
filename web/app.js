@@ -103,6 +103,13 @@ function tripLabel(r) {
   return `${kind} · ${fmtMonth(r.month)} inteiro${stay}${pax}${stops}`;
 }
 
+// Período da viagem (para o clima nas suas datas)
+function tripRange(r) {
+  if (r.date_mode === "fixed") return [r.depart_date, r.return_date || addDays(r.depart_date, 7)];
+  if (r.date_mode === "month") { const d = parseDate(r.month); return [r.month, isoOf(new Date(d.getFullYear(), d.getMonth() + 1, 0))]; }
+  return [r.depart_from, addDays(r.depart_to, r.max_stay || 30)];
+}
+
 // Viagem longa: dias de ida e de volta acompanhados (só no futuro)
 function longWindows(r) {
   const tomorrow = addDays(todayIso(), 1);
@@ -187,6 +194,77 @@ function lineChart(points) {
 }
 
 // ---------------------------------------------------------------------------
+// Fotos, termômetro, "devo comprar?", contagem regressiva
+// ---------------------------------------------------------------------------
+// miniaturas da Wikimedia aceitam alguns tamanhos fixos (330, 500, 960…)
+const photo = (d, size = 500) => d?.thumb ? d.thumb.replace(/\/\d+px-/, `/${size}px-`) : null;
+const bgPhoto = (url) => (url ? `style="background-image:url('${esc(url)}')"` : "");
+
+async function loadDestinations(codes, cols = "code,name,country_code,country_name,thumb") {
+  const uniq = [...new Set(codes.filter(Boolean))];
+  if (!uniq.length) return {};
+  try {
+    const rows = await q(sb.from("destinations").select(cols).in("code", uniq));
+    return Object.fromEntries(rows.map((r) => [r.code, r]));
+  } catch { return {}; }
+}
+
+// primeiro dia da viagem (para a contagem regressiva)
+function tripStart(r, best) {
+  if (best?.depart_date) return best.depart_date;
+  return r.date_mode === "fixed" ? r.depart_date : r.date_mode === "long" ? r.depart_from : r.month;
+}
+function countdown(iso) {
+  if (!iso) return "";
+  const n = daysBetween(todayIso(), iso);
+  return n > 1 ? `✈️ faltam ${n} dias` : n === 1 ? "✈️ é amanhã!" : n === 0 ? "✈️ é hoje!" : "";
+}
+
+// termômetro: barato ← normal → caro, com o ponteiro no preço de hoje
+function thermo(price, normal) {
+  if (!normal || price == null) return "";
+  const p = (Number(price) / Number(normal) - 1) * 100;
+  const pos = Math.max(3, Math.min(97, 50 + p * 1.6));
+  return `<div class="thermo" aria-label="Preço em relação ao normal"><div class="thermo-bar"><i style="left:${pos.toFixed(1)}%"></i></div>
+    <div class="thermo-labels"><span>barato</span><span>normal</span><span>caro</span></div></div>`;
+}
+
+// variação do menor preço em relação a ~24 h atrás
+function dayChange(points) {
+  if (points.length < 2) return null;
+  const last = points[points.length - 1];
+  const ref = [...points].reverse().find((p) => last.t - p.t >= 20 * 3600000);
+  if (!ref) return null;
+  const diff = last.y - ref.y;
+  if (Math.abs(diff) < 1) return { cls: "", text: "= igual a ontem" };
+  return diff < 0 ? { cls: "good", text: `↓ ${brl(-diff)} desde ontem` } : { cls: "bad", text: `↑ ${brl(diff)} desde ontem` };
+}
+
+// "Devo comprar agora?": histórico + quanto falta para a viagem
+function buyVerdict(price, normal, low, startIso) {
+  if (price == null) return null;
+  const left = startIso ? daysBetween(todayIso(), startIso) : null;
+  const mk = (cls, icon, title, text) => ({ cls, icon, title, text });
+  if (!normal) return mk("", "⚪", "Ainda aprendendo", "O robô precisa de mais alguns dias de preços para dizer se vale a pena.");
+  const p = pct(Number(price), Number(normal));
+  const nearLow = low != null && Number(price) <= low * 1.02;
+  if (p >= 10 || nearLow) return mk("good", "🟢", "Bom momento para comprar", nearLow ? "É o menor preço que o robô já viu para esta viagem." : `Está ${Math.round(p)}% abaixo do normal.`);
+  if (left != null && left <= 21) {
+    return p >= -5
+      ? mk("good", "🟢", "Compre logo", `Faltam ${left} dias: perto da data os preços costumam subir.`)
+      : mk("bad", "🔴", "Caro, e a data está chegando", `Está ${Math.round(-p)}% acima do normal, mas faltam só ${left} dias. Esperar é arriscado.`);
+  }
+  if (p <= -8) return mk("bad", "🔴", "Caro: dá para esperar", `Está ${Math.round(-p)}% acima do normal${left ? ` e faltam ${left} dias` : ""}. O robô avisa quando cair.`);
+  return mk("warn", "🟡", "Pode esperar", `Preço dentro do normal${left ? `; faltam ${left} dias` : ""}. O robô avisa se aparecer promoção.`);
+}
+const verdictChip = (v) => (v ? `<span class="badge ${v.cls}">${v.icon} ${esc(v.title)}</span>` : "");
+const verdictCard = (v) => (v ? `<div class="verdict ${v.cls}"><div class="verdict-icon">${v.icon}</div><div><div class="muted tiny">Devo comprar agora?</div><b>${esc(v.title)}</b><div class="small">${esc(v.text)}</div></div></div>` : "");
+
+// companhias aéreas mais comuns (códigos IATA)
+const AIRLINES = { LA: "LATAM", JJ: "LATAM", G3: "GOL", AD: "Azul", JA: "JetSMART", WJ: "JetSMART", AR: "Aerolíneas Argentinas", FO: "Flybondi", H2: "SKY", CM: "Copa", AV: "Avianca", TP: "TAP", AF: "Air France", KL: "KLM", IB: "Iberia", UX: "Air Europa", AA: "American", UA: "United", DL: "Delta", LH: "Lufthansa", LX: "Swiss", BA: "British Airways", AZ: "ITA", EK: "Emirates", QR: "Qatar", TK: "Turkish", AC: "Air Canada", AM: "Aeroméxico", ET: "Ethiopian", ZP: "Paranair", "2Z": "Voepass", DM: "Arajet", "4M": "LATAM" };
+const airlineName = (c) => AIRLINES[c] || c || "";
+
+// ---------------------------------------------------------------------------
 // Status do robô (no topo)
 // ---------------------------------------------------------------------------
 async function updateBotStatus() {
@@ -209,6 +287,8 @@ async function updateBotStatus() {
 const ROUTES = [
   [/^#\/login$/, viewLogin],
   [/^#\/?$/, viewHome],
+  [/^#\/explorar$/, viewExplore],
+  [/^#\/destino\/([A-Z0-9]{3})$/, viewDestination],
   [/^#\/nova$/, viewForm],
   [/^#\/editar\/([\w-]+)$/, viewForm],
   [/^#\/rota\/([\w-]+)$/, viewRoute],
@@ -216,12 +296,15 @@ const ROUTES = [
   [/^#\/config$/, viewSettings],
 ];
 
+let hashParams = new URLSearchParams();
+
 async function render() {
-  const hash = location.hash || "#/";
+  const [hash, query = ""] = (location.hash || "#/").split("?");
+  hashParams = new URLSearchParams(query);
   if (!session && hash !== "#/login") { location.replace("#/login"); return; }
   if (session && hash === "#/login") { location.replace("#/"); return; }
   $tabs.hidden = !session;
-  const tab = hash.startsWith("#/alertas") ? "alertas" : hash.startsWith("#/config") ? "config" : "rotas";
+  const tab = hash.startsWith("#/alertas") ? "alertas" : hash.startsWith("#/config") ? "config" : hash.startsWith("#/explorar") || hash.startsWith("#/destino") ? "explorar" : "rotas";
   $tabs.querySelectorAll("a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
   const seq = ++renderSeq;
   const match = ROUTES.find(([re]) => re.test(hash));
@@ -291,45 +374,60 @@ viewLogin.after = () => {
 // Início: lista de rotas
 // ---------------------------------------------------------------------------
 async function viewHome() {
-  const [routes, latest, totals, trend] = await Promise.all([
+  const [routes, latest, totals, trend, deals] = await Promise.all([
     q(sb.from("routes").select("*").order("created_at")),
     q(sb.from("route_latest").select("route_id,depart_date,return_date,price,normal_price,checked_at").is("leg", null).gte("depart_date", todayIso()).limit(1000)),
     q(sb.from("route_latest").select("route_id,leg,depart_date,return_date,price,normal_price,checked_at").in("leg", ["rt", "combo"]).eq("direct_only", false).gte("checked_at", isoDaysAgo(2)).limit(1000)),
     q(sb.from("route_trend").select("route_id,checked_at,best_price").gte("checked_at", isoDaysAgo(10)).order("checked_at").limit(1000)),
+    q(sb.from("deals").select("*").order("price").limit(200)).catch(() => []),
   ]);
   updateBotStatus();
+  const dests = await loadDestinations([...routes.map((r) => r.destination), ...deals.slice(0, 40).map((d) => d.destination)]);
   const active = routes.filter((r) => r.active).length;
   const canAdd = active < MAX_ROUTES;
   const head = `<div class="row between"><h1>Suas rotas</h1><span class="muted small">${active} de ${MAX_ROUTES} ativas</span></div>`;
   if (!routes.length) {
+    const ideas = deals.filter((d) => d.country_code !== "BR").slice(0, 3);
     return `${head}<div class="card empty"><div class="big">✈️</div>
       <p><b>Nenhuma rota ainda.</b><br>Cadastre a viagem que você quer acompanhar e o robô começa a vigiar os preços.</p>
-      <a class="btn primary" href="#/nova">Cadastrar primeira rota</a></div>`;
+      <a class="btn primary" href="#/nova">Cadastrar primeira rota</a></div>
+      ${ideas.length ? `<h2>Ideias saindo de ${esc(originName(ideas[0].origin, routes))}</h2><div class="stack">${ideas.map((d) => dealCard(d, dests[d.destination], routes)).join("")}</div>
+      <p><a class="btn block" href="#/explorar">Ver mais promoções</a></p>` : ""}`;
   }
   const cards = routes.map((r) => {
     const rows = r.date_mode === "long" ? lastCheck(totals.filter((x) => x.route_id === r.id && inScope(r, x))) : latest.filter((x) => x.route_id === r.id && inScope(r, x));
     const best = rows.reduce((a, b) => (!a || Number(b.price) < Number(a.price) ? b : a), null);
     const normal = best?.normal_price ?? (r.date_mode === "month" ? median(rows.map((x) => Number(x.price))) : null);
     const lv = best ? level(Number(best.price), normal ? Number(normal) : null, r.threshold_pct) : null;
-    const spark = sparkline(trend.filter((t) => t.route_id === r.id).map((t) => Number(t.best_price)));
+    const points = trend.filter((t) => t.route_id === r.id).map((t) => ({ t: new Date(t.checked_at), y: Number(t.best_price) }));
+    const spark = sparkline(points.map((p) => p.y));
+    const change = dayChange(points);
+    const low = points.length ? Math.min(...points.map((p) => p.y)) : null;
+    const start = tripStart(r, best);
+    const verdict = best && r.active ? buyVerdict(best.price, normal, low, start) : null;
     const when = best ? (best.return_date ? `${fmtDay(best.depart_date)} → ${fmtDay(best.return_date)}` : fmtDay(best.depart_date)) : "";
-    return `<a class="card route-card" href="#/rota/${r.id}">
-      <div class="row between" style="align-items:flex-start">
-        <div class="grow">
+    const d = dests[r.destination];
+    return `<a class="card route-card has-photo" href="#/rota/${r.id}">
+      <div class="route-photo" ${bgPhoto(photo(d))}>
+        <div class="route-photo-text">
           <div class="od ellipsis">${esc(place(r, "origin"))}<span class="arrow">→</span>${esc(place(r, "destination"))}</div>
           <div class="meta">${esc(tripLabel(r))}</div>
         </div>
-        ${!r.active ? `<span class="badge paused">pausada</span>` : ""}
+        ${!r.active ? `<span class="badge paused photo-badge">pausada</span>` : countdown(start) ? `<span class="badge photo-badge">${countdown(start)}</span>` : ""}
       </div>
-      <div class="row between wrap" style="margin-top:12px">
-        <div>
-          <div class="price-big">${best ? brl(best.price) : "…"} ${best && r.date_mode !== "fixed" ? `<small>em ${esc(when)}</small>` : ""}</div>
-          <div class="muted small">${best ? `normal ~${brl(normal)} · ${ago(best.checked_at)}` : r.active ? "aguardando a primeira verificação" : ""}</div>
+      <div class="route-body">
+        <div class="row between wrap">
+          <div>
+            <div class="price-big">${best ? brl(best.price) : "…"} ${best && r.date_mode !== "fixed" ? `<small>em ${esc(when)}</small>` : ""}</div>
+            <div class="muted small">${best ? `normal ~${brl(normal)} · ${ago(best.checked_at)}` : r.active ? "aguardando a primeira verificação" : ""}</div>
+          </div>
+          ${change ? `<span class="badge ${change.cls}">${esc(change.text)}</span>` : lv ? `<span class="badge ${lv.cls}">${esc(lv.label)}</span>` : ""}
         </div>
-        ${lv ? `<span class="badge ${lv.cls}">${esc(lv.label)}</span>` : ""}
+        ${best ? thermo(best.price, normal) : ""}
+        ${verdict ? `<div style="margin-top:8px">${verdictChip(verdict)}</div>` : ""}
+        ${spark}
+        ${r.last_error ? `<div class="error-line">⚠️ ${esc(r.last_error)}</div>` : ""}
       </div>
-      ${spark}
-      ${r.last_error ? `<div class="error-line">⚠️ ${esc(r.last_error)}</div>` : ""}
     </a>`;
   }).join("");
   return `${head}<div class="stack">${cards}</div>
@@ -363,17 +461,35 @@ async function viewRoute(id) {
   if (route.date_mode === "long") Object.assign(current, { latest, normalOf });
   else current = { route, latest, normalOf };
 
+  const dest = (await loadDestinations([route.destination]))[route.destination];
+  const points = trend.map((t) => ({ t: new Date(t.checked_at), y: Number(t.best_price) }));
+  const low = points.length ? Math.min(...points.map((p) => p.y)) : null;
+  let top = best, topNormal = normalOf(best);
+  if (route.date_mode === "long") {
+    const ld = longData();
+    top = [ld.combo, ld.rt].filter(Boolean).sort((a, b) => Number(a.price) - Number(b.price))[0] || null;
+    topNormal = top?.normal_price != null ? Number(top.normal_price) : null;
+  }
+  const start = tripStart(route, top);
+  const verdict = top && route.active ? buyVerdict(top.price, topNormal, low, start) : null;
+  const [from, to] = tripRange(route);
   const bestCard = route.date_mode === "long" ? "" : best ? priceCard(route, best, normalOf(best), "Menor preço agora") : `<div class="card"><div class="muted">${route.active ? "Ainda sem preços. O robô verifica em até ~15 min depois de cadastrar." : "Rota pausada."}</div></div>`;
   const nextCheck = route.last_checked_at ? new Date(new Date(route.last_checked_at).getTime() + route.check_every_hours * 3600000) : null;
   const requested = route.check_requested_at && (!route.last_checked_at || route.check_requested_at > route.last_checked_at);
 
   return `
     <p><a href="#/" class="small">← Rotas</a></p>
-    <div class="row between" style="align-items:flex-start">
-      <div class="grow"><h1 style="margin-bottom:4px">${esc(place(route, "origin"))} → ${esc(place(route, "destination"))}</h1>
-      <div class="muted small">${esc(tripLabel(route))}</div></div>
-      ${!route.active ? `<span class="badge paused">pausada</span>` : ""}
+    <div class="hero" ${bgPhoto(photo(dest, 960))}>
+      <div class="hero-text">
+        <h1>${esc(place(route, "origin"))} → ${esc(place(route, "destination"))}</h1>
+        <div class="small">${esc(tripLabel(route))}</div>
+      </div>
+      ${!route.active ? `<span class="badge paused photo-badge">pausada</span>` : countdown(start) ? `<span class="badge photo-badge">${countdown(start)}</span>` : ""}
     </div>
+    <a class="card know-card" href="#/destino/${esc(route.destination)}?de=${from}&ate=${to}">
+      <span>🧭 Conhecer ${esc(dest?.name || place(route, "destination"))}: clima nas suas datas, pontos turísticos, moeda…</span><span>→</span>
+    </a>
+    ${verdict ? `<div style="margin-top:12px">${verdictCard(verdict)}</div>` : ""}
     ${route.last_error ? `<div class="hint warn" style="margin-top:12px">⚠️ ${esc(route.last_error)}</div>` : ""}
     <div style="margin-top:16px">${bestCard}</div>
 
@@ -519,6 +635,7 @@ function totalsCard(route, combo, rt) {
       <div class="price-big">${brl(top.price)}</div>
       <span class="badge ${lv.cls}">${esc(lv.label)}</span>
     </div>
+    ${thermo(top.price, top.normal_price)}
     <div class="list" style="margin-top:10px">${options.map(line).join("")}</div>
     <div class="muted tiny" style="margin-top:8px">Duas passagens só de ida podem ser de companhias diferentes. A passagem de ida e volta só é consultada pelo robô em viagens de até 30 dias; acima disso, toque em “Comparar com ida e volta”. ${ago(top.checked_at)}.</div>
   </div>`;
@@ -557,6 +674,7 @@ function priceCard(route, row, normal, title) {
       <div class="price-big">${brl(row.price)}</div>
       <span class="badge ${lv.cls}">${esc(lv.label)}</span>
     </div>
+    ${thermo(row.price, normal)}
     <div style="margin-top:6px;font-weight:600">📅 ${esc(dates)}</div>
     <div class="muted small">${esc(details)}${normal ? ` · normal ~${brl(normal)}` : ""} · ${ago(row.checked_at)}</div>
     <div class="fab-row" style="margin-top:12px">
@@ -615,6 +733,197 @@ function alertItem(a, withRoute = false) {
 }
 
 // ---------------------------------------------------------------------------
+// Explorar: promoções saindo das suas origens (o robô atualiza a cada 6 h)
+// ---------------------------------------------------------------------------
+const CITY_NAMES = { RIO: "Rio de Janeiro", SAO: "São Paulo", BHZ: "Belo Horizonte", BSB: "Brasília" };
+function originName(code, routes = []) {
+  return routes.find((r) => r.origin === code)?.origin_label || CITY_NAMES[code] || code;
+}
+
+function dealCard(d, dest, routes = []) {
+  const days = d.return_date ? daysBetween(d.depart_date, d.return_date) : null;
+  const dates = d.return_date ? `${fmtShort(d.depart_date)} → ${fmtShort(d.return_date)} · ${days} dias` : fmtShort(d.depart_date);
+  const track = new URLSearchParams({ orig: d.origin, orignome: originName(d.origin, routes), dest: d.destination, nome: d.destination_label || d.destination, mes: d.depart_date.slice(0, 7), ...(days ? { dias: String(days) } : {}) });
+  return `<div class="card deal">
+    <a class="deal-photo" href="#/destino/${esc(d.destination)}" ${bgPhoto(photo(dest))}>${dest?.thumb ? "" : "✈️"}</a>
+    <div class="deal-body">
+      <div class="row between" style="align-items:flex-start;gap:8px">
+        <div class="grow"><b>${esc(d.destination_label || d.destination)}</b><div class="muted tiny">${esc(d.country_name || "")}</div></div>
+        <div style="text-align:right"><b class="deal-price">${brl(d.price)}</b><div class="muted tiny">ida e volta</div></div>
+      </div>
+      <div class="small" style="margin-top:4px">📅 ${esc(dates)}</div>
+      <div class="muted tiny">${esc([airlineName(d.airline), stopsLabel(d.stops)].filter(Boolean).join(" · "))}</div>
+      <div class="fab-row" style="margin-top:8px">
+        <a class="btn sm primary" href="#/nova?${track}">Acompanhar</a>
+        <a class="btn sm" href="#/destino/${esc(d.destination)}">Conhecer</a>
+        ${d.link ? `<a class="btn sm" href="${esc(d.link)}" target="_blank" rel="noopener">Oferta ↗</a>` : ""}
+      </div>
+    </div>
+  </div>`;
+}
+
+let explore = { scope: "intl", origin: null };
+
+async function viewExplore() {
+  const [deals, routes, settings] = await Promise.all([
+    q(sb.from("deals").select("*").order("price").limit(300)),
+    q(sb.from("routes").select("origin,origin_label")),
+    q(sb.from("settings").select("deals_refreshed_at").eq("id", 1).maybeSingle()),
+  ]);
+  if (!deals.length) {
+    return `<h1>Explorar</h1><div class="card empty"><div class="big">🧭</div><p>O robô ainda está buscando as promoções.<br>Volte em ~15 minutos.</p></div>`;
+  }
+  const origins = [...new Set(deals.map((d) => d.origin))];
+  if (!origins.includes(explore.origin)) explore.origin = origins.includes("RIO") ? "RIO" : origins[0];
+  const dests = await loadDestinations(deals.map((d) => d.destination));
+  explore = { ...explore, deals, routes, dests };
+  return `<h1>Explorar</h1>
+    <p class="muted small" style="margin-top:-6px">Passagens de ida e volta mais baratas encontradas nos últimos dias, por pessoa. Atualizado ${ago(settings?.deals_refreshed_at)}.</p>
+    ${origins.length > 1 ? `<label class="field"><span>Saindo de</span><select class="input" id="exp-origin">${origins.map((o) => `<option value="${esc(o)}" ${o === explore.origin ? "selected" : ""}>${esc(originName(o, routes))}</option>`).join("")}</select></label><div style="height:10px"></div>` : ""}
+    <div class="seg" id="exp-scope"><button type="button" data-v="intl">🌎 Internacional</button><button type="button" data-v="br">🇧🇷 Nacional</button></div>
+    <div id="exp-list" class="stack" style="margin-top:14px"></div>`;
+}
+viewExplore.after = () => {
+  const draw = () => {
+    const { deals, dests, routes, scope, origin } = explore;
+    if (!deals) return;
+    document.querySelectorAll("#exp-scope button").forEach((b) => b.classList.toggle("on", b.dataset.v === scope));
+    const list = deals.filter((d) => d.origin === origin && (scope === "br" ? d.country_code === "BR" : d.country_code !== "BR"));
+    document.getElementById("exp-list").innerHTML = list.length ? list.map((d) => dealCard(d, dests[d.destination], routes)).join("") : `<div class="card empty">Nenhuma promoção nesta categoria agora.</div>`;
+  };
+  document.getElementById("exp-scope")?.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    explore.scope = b.dataset.v; draw();
+  });
+  document.getElementById("exp-origin")?.addEventListener("change", (e) => { explore.origin = e.target.value; draw(); });
+  draw();
+};
+
+// ---------------------------------------------------------------------------
+// Destino: foto, informações práticas, clima nas suas datas, pontos turísticos
+// (o robô prepara o que é lento; clima, câmbio e fuso vêm ao vivo)
+// ---------------------------------------------------------------------------
+const SCHENGEN = "AT BE BG HR CZ DK EE FI FR DE GR HU IS IT LV LI LT LU MT NL NO PL PT RO SK SI ES SE CH".split(" ");
+const RG_COUNTRIES = "AR UY PY CL BO PE CO EC VE".split(" ");
+function entryRules(cc) {
+  if (cc === "BR") return "Viagem nacional: leve um documento oficial com foto.";
+  if (SCHENGEN.includes(cc)) return "Brasileiro não precisa de visto para turismo: até 90 dias a cada 180 na área Schengen. Leve passaporte válido, seguro-viagem e comprovantes de hospedagem e volta. Confira se a autorização ETIAS já está sendo exigida.";
+  if (RG_COUNTRIES.includes(cc)) return "Dá para entrar só com o RG (carteira de identidade) em bom estado, de preferência emitido há menos de 10 anos, ou com passaporte.";
+  if (cc === "US") return "Exige visto americano (turismo B1/B2) e passaporte válido.";
+  if (cc === "GB") return "Não precisa de visto para turismo, mas exige a autorização eletrônica ETA antes do embarque.";
+  if (cc === "CA") return "Exige visto ou autorização eletrônica eTA (para quem tem ou teve visto americano nos últimos 10 anos).";
+  return null;
+}
+
+// tomadas: nome técnico (Wikidata) → tipo por letra; no Brasil usamos N e C
+const PLUG_TYPES = { "Europlug": "C", "Schuko": "F", "CEE 7/5": "E", "AS/NZS 3112": "I", "IEC 60906-1": "N", "NEMA 1-15": "A", "NEMA 5-15": "B", "BS 1363": "G", "BS 546": "D", "CEI 23-50": "L", "SEV 1011": "J", "SI 32": "H" };
+function plugInfo(f) {
+  const types = [...new Set((f?.plugs || []).map((p) => PLUG_TYPES[p] || (p.match(/\b(?:Type|tipo)\s+([A-N])\b/i) || [])[1]).filter(Boolean))].sort();
+  if (!types.length) return null;
+  const ok = types.some((t) => t === "C" || t === "N");
+  return `Tipo ${types.join(", ")}${f.voltage ? ` · ${f.voltage} V` : ""}${ok ? "" : " · leve adaptador"}`;
+}
+
+async function viewDestination(code) {
+  let d = await q(sb.from("destinations").select("*").eq("code", code).maybeSingle());
+  const needAttractions = !d?.attractions_at && (!d?.attractions_requested_at || Date.now() - new Date(d.attractions_requested_at) > 3600000);
+  if (needAttractions) {
+    // pede para o robô preparar (na próxima rodada, ~15 min)
+    const now = new Date().toISOString();
+    try { await q(sb.from("destinations").upsert({ code, attractions_requested_at: now }, { onConflict: "code" })); } catch {}
+  }
+  if (!d?.lat) {
+    return `<p><a href="javascript:history.back()" class="small">← Voltar</a></p>
+      <div class="card empty"><div class="big">🧭</div><p><b>Preparando este destino…</b><br>O robô junta fotos, pontos turísticos e informações práticas. Volte em ~15 minutos.</p></div>`;
+  }
+  const de = hashParams.get("de"), ate = hashParams.get("ate");
+  current = { dest: d, de, ate };
+  const f = d.facts || {};
+  const plugs = plugInfo(f);
+  const rules = entryRules(d.country_code);
+  const attractions = d.attractions || [];
+  return `
+    <p><a href="javascript:history.back()" class="small">← Voltar</a></p>
+    <div class="hero tall" ${bgPhoto(photo(d, 960))}>
+      <div class="hero-text"><h1>${esc(d.name)}</h1><div class="small">${esc(d.country_name || "")}</div></div>
+    </div>
+
+    <div class="facts">
+      <div class="fact"><div class="fact-k">💱 Moeda</div><div class="fact-v" id="fx">${f.currency && f.currency !== "BRL" ? esc(f.currency) + "…" : f.currency === "BRL" ? "Real (R$)" : "–"}</div></div>
+      <div class="fact"><div class="fact-k">🕐 Fuso e tempo agora</div><div class="fact-v" id="tz">…</div></div>
+      <div class="fact"><div class="fact-k">🗣️ Idioma</div><div class="fact-v">${esc((f.languages || []).join(", ") || "–")}</div></div>
+      <div class="fact"><div class="fact-k">🔌 Tomada</div><div class="fact-v">${esc(plugs || "–")}</div></div>
+    </div>
+
+    <h2>🌦️ Clima ${de ? "nas suas datas" : "no próximo mês"}</h2>
+    <div class="card" id="weather"><div class="muted small">Carregando…</div></div>
+
+    ${rules ? `<h2>🛂 Entrada no país</h2><div class="card small">${esc(rules)}<div class="muted tiny" style="margin-top:6px">Regras mudam: confirme no consulado ou no <a href="https://www.gov.br/mre/pt-br/assuntos/portal-consular" target="_blank" rel="noopener">Portal Consular ↗</a> antes de viajar.</div></div>` : ""}
+
+    ${d.summary ? `<h2>📖 Sobre</h2><div class="card small">${esc(d.summary)}${d.wiki_url ? `<div style="margin-top:8px"><a href="${esc(d.wiki_url)}" target="_blank" rel="noopener">Ler mais na Wikipedia ↗</a></div>` : ""}</div>` : ""}
+
+    <h2>📍 Pontos turísticos</h2>
+    ${attractions.length ? `<div class="spots">${attractions.map((a, i) => `<div class="spot">
+        <div class="spot-photo" ${bgPhoto(a.image)}><span class="spot-rank">${i + 1}</span></div>
+        <div class="spot-body">
+          <b>${esc(a.name)}</b>
+          ${a.desc ? `<div class="muted tiny">${esc(a.desc)}</div>` : ""}
+          <div class="row tiny" style="gap:10px;margin-top:6px">
+            <a href="${esc(a.link)}" target="_blank" rel="noopener">Saiba mais ↗</a>
+            <a href="https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lon}" target="_blank" rel="noopener">Mapa ↗</a>
+          </div>
+        </div>
+      </div>`).join("")}</div>
+      <p class="muted tiny">Ordenados pela fama (em quantas Wikipedias aparecem). Fotos: Wikimedia Commons.</p>`
+      : `<div class="card muted small">${d.attractions_at ? "Não encontramos pontos turísticos cadastrados aqui." : "Preparando a lista… o robô junta os pontos turísticos na próxima rodada (~15 min)."}</div>`}
+
+    <h2>🏨 Hotéis</h2>
+    <div class="card small"><b>Em breve:</b> compare o preço de cada hotel em vários sites (Booking, Expedia, Hoteis.com, Decolar…) para as datas da sua viagem.</div>`;
+}
+viewDestination.after = async () => {
+  const { dest: d, de, ate } = current || {};
+  if (!d?.lat) return;
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  const f = d.facts || {};
+  // câmbio do dia
+  if (f.currency && f.currency !== "BRL") {
+    fetch(`https://open.er-api.com/v6/latest/${f.currency}`).then((r) => r.json()).then((j) => {
+      const v = j?.rates?.BRL;
+      const num = (x, dec) => x.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      // moeda muito desvalorizada (ex.: peso argentino): mostra quanto vale R$ 1
+      set("fx", !v ? esc(f.currency) : v < 0.2 ? `R$ 1 = ${num(1 / v, 1 / v >= 100 ? 0 : 2)} ${esc(f.currency)}` : `1 ${esc(f.currency)} = R$ ${num(v, 2)}`);
+    }).catch(() => set("fx", esc(f.currency)));
+  }
+  // fuso e temperatura agora
+  fetch(`https://api.open-meteo.com/v1/forecast?latitude=${d.lat}&longitude=${d.lon}&current=temperature_2m&timezone=auto&forecast_days=1`).then((r) => r.json()).then((j) => {
+    const diff = Math.round((j.utc_offset_seconds - -10800) / 3600);
+    const tz = diff === 0 ? "mesmo horário de Brasília" : `${diff > 0 ? "+" : ""}${diff} h em relação a Brasília`;
+    set("tz", `${tz}${j.current ? ` · ${Math.round(j.current.temperature_2m)}°C agora` : ""}`);
+  }).catch(() => set("tz", "–"));
+  // clima: mesmas datas do ano passado (histórico real)
+  let from = de, to = ate;
+  if (!from) { const n = new Date(); from = isoOf(new Date(n.getFullYear(), n.getMonth() + 1, 1)); to = isoOf(new Date(n.getFullYear(), n.getMonth() + 2, 0)); }
+  if (!to || to < from) to = addDays(from, 7);
+  if (daysBetween(from, to) > 120) to = addDays(from, 120);
+  let years = 1;
+  while (addDays(to, -365 * years) > addDays(todayIso(), -6)) years++;
+  const shift = (iso) => { const x = parseDate(iso); x.setFullYear(x.getFullYear() - years); return isoOf(x); };
+  try {
+    const j = await (await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${d.lat}&longitude=${d.lon}&start_date=${shift(from)}&end_date=${shift(to)}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`)).json();
+    const t = j.daily;
+    const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    const rainy = t.precipitation_sum.filter((v) => v >= 1).length;
+    const days = t.time.length;
+    const label = de ? `${fmtShort(from)} a ${fmtShort(to)}` : fmtMonth(from);
+    set("weather", `<div class="row between wrap" style="gap:12px">
+        <div><div class="price-big">${Math.round(avg(t.temperature_2m_min))}° a ${Math.round(avg(t.temperature_2m_max))}°C</div><div class="muted small">mínima e máxima médias</div></div>
+        <div style="text-align:right"><div class="price-big">${rainy}<small> de ${days} dias</small></div><div class="muted small">com chuva</div></div>
+      </div>
+      <div class="muted tiny" style="margin-top:8px">${esc(label)}: como foi o tempo nesse mesmo período ${years > 1 ? `há ${years} anos` : "no ano passado"} (dados reais da Open-Meteo).</div>`);
+  } catch { set("weather", `<div class="muted small">Não foi possível carregar o clima agora.</div>`); }
+};
+
+// ---------------------------------------------------------------------------
 // Alertas
 // ---------------------------------------------------------------------------
 async function viewAlerts() {
@@ -635,15 +944,19 @@ async function viewForm(id = null) {
     r = await q(sb.from("routes").select("*").eq("id", id).maybeSingle());
     if (!r) return `<div class="hint warn">Rota não encontrada.</div>`;
   }
-  const nextMonth = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return isoOf(d); })();
+  let nextMonth = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return isoOf(d); })();
+  // atalho do Explorar: #/nova?orig=RIO&orignome=…&dest=BUE&nome=…&mes=2026-12&dias=7
+  const pre = id ? null : hashParams;
+  if (pre?.get("mes")) nextMonth = pre.get("mes") + "-01";
   form = {
     id,
     original: r,
-    origin: r ? { code: r.origin, label: r.origin_label || r.origin } : null,
-    destination: r ? { code: r.destination, label: r.destination_label || r.destination } : null,
+    origin: r ? { code: r.origin, label: r.origin_label || r.origin } : pre?.get("orig") ? { code: pre.get("orig"), label: pre.get("orignome") || pre.get("orig") } : null,
+    destination: r ? { code: r.destination, label: r.destination_label || r.destination } : pre?.get("dest") ? { code: pre.get("dest"), label: pre.get("nome") || pre.get("dest") } : null,
     trip_type: r?.trip_type || "round_trip",
-    date_mode: r?.date_mode || "fixed",
+    date_mode: r?.date_mode || (pre?.get("mes") ? "month" : "fixed"),
   };
+  const preStay = pre?.get("dias") ? Math.max(1, Math.min(60, Number(pre.get("dias")))) : 7;
   const nextMonthEnd = (() => { const d = parseDate(nextMonth); return isoOf(new Date(d.getFullYear(), d.getMonth() + 1, 0)); })();
   const v = (x, d = "") => esc(x ?? d);
   return `
@@ -671,7 +984,7 @@ async function viewForm(id = null) {
         <div data-show="month" style="margin-top:14px">
           <div class="grid2">
             <label class="field"><span>Mês da ida</span><input class="input" type="month" name="month" min="${todayIso().slice(0, 7)}" value="${v((r?.month || nextMonth).slice(0, 7))}"></label>
-            <label class="field" data-show="round_trip"><span>Dias de viagem</span><input class="input" type="number" name="stay_days" min="1" max="60" inputmode="numeric" value="${v(r?.stay_days, 7)}"></label>
+            <label class="field" data-show="round_trip"><span>Dias de viagem</span><input class="input" type="number" name="stay_days" min="1" max="60" inputmode="numeric" value="${v(r?.stay_days, preStay)}"></label>
           </div>
           <p class="muted small" style="margin:10px 0 0">O robô acompanha todos os dias do mês e te avisa quais estão mais baratos.</p>
         </div>

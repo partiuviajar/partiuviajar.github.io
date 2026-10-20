@@ -40,6 +40,11 @@ class DB:
         r = self._check(self.s.post(f"{self.base}/{table}", json=rows, headers=headers, timeout=30))
         return r.json() if returning else None
 
+    def upsert(self, table: str, rows: list[dict] | dict, on_conflict: str):
+        """Insere ou atualiza pela chave `on_conflict` (só as colunas enviadas)."""
+        headers = {"Prefer": "resolution=merge-duplicates,return=minimal"}
+        self._check(self.s.post(f"{self.base}/{table}", params={"on_conflict": on_conflict}, json=rows, headers=headers, timeout=30))
+
     def update(self, table: str, match: dict, values: dict, returning: bool = False):
         headers = {"Prefer": "return=representation" if returning else "return=minimal"}
         r = self._check(self.s.patch(f"{self.base}/{table}", params=match, json=values, headers=headers, timeout=30))

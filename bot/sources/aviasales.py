@@ -123,3 +123,8 @@ def search(origin: str, destination: str, depart_month: date, return_month: date
             if q.depart_date and (q.return_date or not return_month):
                 out.append(q)
     return out
+
+
+def cheapest_destinations(origin: str) -> list[dict]:
+    """Ida e volta mais barata (em cache) saindo de `origin` para cada destino. Itens crus da API, do mais barato."""
+    return _fetch({"origin": origin, "unique": "true", "one_way": "false"})

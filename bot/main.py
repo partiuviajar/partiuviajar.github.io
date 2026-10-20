@@ -17,6 +17,7 @@ from itertools import zip_longest
 from zoneinfo import ZoneInfo
 
 import analysis
+import explore
 import notify
 from db import DB
 from sources import Quote, SourceError, aviasales, google
@@ -25,6 +26,7 @@ TZ = ZoneInfo("America/Sao_Paulo")
 GOOGLE_MONTH_BUDGET = int(os.environ.get("GOOGLE_MONTH_BUDGET", "8"))  # buscas no Google por rota "mês inteiro"
 MAX_DATES_PER_ALERT = 3
 RUN_TIME_BUDGET_S = 18 * 60  # não começa rota nova depois disso
+EXPLORE_TIME_BUDGET_S = 8 * 60  # rodada sem rotas: tempo para preparar destinos
 
 
 def parse_ts(value: str | None) -> datetime | None:
@@ -590,6 +592,8 @@ def main():
 
     if not wants_test and not due:
         print(f"Nada a fazer agora ({len(routes)} rota(s) ativa(s)).")
+        for note in explore.run(db, routes, settings, now, started + EXPLORE_TIME_BUDGET_S):
+            print(note)
         return
 
     run = db.insert("bot_runs", {"started_at": now.isoformat()}, returning=True)[0]
@@ -622,6 +626,9 @@ def main():
             db.update("routes", {"id": f"eq.{route['id']}"}, {"last_checked_at": now.isoformat(), "last_error": str(e)[:300]})
         print(line)
         summaries.append(line)
+
+    # promoções e informações dos destinos, com o tempo que sobrar
+    summaries += explore.run(db, routes, settings, now, max(time.monotonic() + 60, started + RUN_TIME_BUDGET_S))
 
     try:
         prune(db, now)
