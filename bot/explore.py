@@ -171,7 +171,12 @@ def _attractions(lat: float, lon: float) -> list[dict]:
     # cidades muito cadastradas (ex.: Amsterdã) estouram o tempo do Wikidata: tenta de novo num raio menor
     for radius, min_links in ((10, 8), (4, 12), (2, 15)):
         try:
-            return _attractions_query(lat, lon, radius, min_links)
+            found = _attractions_query(lat, lon, radius, min_links)
+            if len(found) < 6:
+                # cidade menos famosa: aceita lugares que aparecem em menos Wikipedias
+                more = _attractions_query(lat, lon, radius, 2)
+                found += [a for a in more if a["name"] not in {f["name"] for f in found}][: 15 - len(found)]
+            return found
         except requests.HTTPError as e:
             if e.response is None or e.response.status_code not in (500, 502, 503, 504):
                 raise
@@ -237,7 +242,7 @@ def _basic(code: str, countries: dict[str, str]) -> dict | None:
 def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[str]:
     """Prepara destinos novos (rotas primeiro, depois promoções) e pontos turísticos das rotas ou pedidos pelo app."""
     notes = []
-    known = {r["code"]: r for r in db.select("destinations", {"select": "code,qid,lat,lon,updated_at,attractions_at,attractions_requested_at"})}
+    known = {r["code"]: r for r in db.select("destinations", {"select": "code,qid,lat,lon,updated_at,attractions,attractions_at,attractions_requested_at"})}
     deal_codes = [r["destination"] for r in db.select("deals", {"select": "destination", "order": "price.asc"})]
     stale = lambda r: not r.get("updated_at") or datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00")).replace(tzinfo=None) < datetime.utcnow() - DESTINATION_REFRESH
     todo = []
@@ -262,8 +267,10 @@ def refresh_destinations(db, route_codes: list[str], deadline: float) -> list[st
     if done:
         notes.append(f"{done} destino(s) preparado(s)")
 
+    day_old = lambda ts: ts and datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None) < datetime.utcnow() - timedelta(days=1)
     want = [c for c, r in known.items() if r.get("lat") and (
         (c in route_codes and not r.get("attractions_at"))
+        or (r.get("attractions_at") and len(r.get("attractions") or []) < 6 and day_old(r["attractions_at"]))
         or (r.get("attractions_requested_at") and (not r.get("attractions_at") or r["attractions_requested_at"] > r["attractions_at"]))
     )]
     for code in want[:ATTRACTIONS_PER_RUN]:
