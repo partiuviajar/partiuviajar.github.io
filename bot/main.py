@@ -629,7 +629,9 @@ def main():
         summaries.append(line)
 
     # promoções e informações dos destinos, com o tempo que sobrar
-    summaries += explore.run(db, routes, settings, now, max(time.monotonic() + 60, started + RUN_TIME_BUDGET_S))
+    for note in explore.run(db, routes, settings, now, max(time.monotonic() + 60, started + RUN_TIME_BUDGET_S)):
+        print(note)
+        summaries.append(note)
 
     try:
         prune(db, now)
