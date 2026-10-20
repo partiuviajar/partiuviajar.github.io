@@ -4,39 +4,43 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Radar de Voos</title>
-  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="Vigia preços de passagens 24h e avisa quando ficam abaixo do normal.">
+  <meta name="theme-color" content="#eef4fc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#080d18" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Radar Voos">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20261020c">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css?v=20261020d">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#/">
-      <img src="icons/icon.svg" alt="" width="28" height="28">
-      <span>Radar de Voos</span>
-    </a>
-    <span id="bot-status" class="bot-status" hidden></span>
+  <header class="topbar glass" id="topbar" hidden>
+    <div class="topbar-in">
+      <a class="brand" href="#/">
+        <span class="brand-logo bg-brand shadow-float" id="brand-logo"></span>
+        <span class="brand-name truncate">Radar de Voos</span>
+      </a>
+      <div class="top-actions">
+        <span class="bot-pill" id="bot-status" hidden><i class="pulse-dot"></i><span>Robô ativo</span></span>
+        <a class="round-btn" href="#/config" id="settings-btn" aria-label="Ajustes"></a>
+      </div>
+    </div>
   </header>
 
-  <main id="view" class="view" aria-live="polite">
-    <div class="loading">Carregando…</div>
-  </main>
+  <main id="view" aria-live="polite"><div class="loading">Carregando…</div></main>
 
-  <nav id="tabs" class="tabs" hidden>
-    <a href="#/" data-tab="rotas"><svg viewBox="0 0 24 24"><path d="M2.5 19h19M3.6 12.7l3.9 1.6 4.4-2.4-6.6-4.4 1.8-1 9.1 3 4.4-2.4c1.1-.6 2.4-.2 2.9.8.4.8 0 1.8-.8 2.2L8.4 16.4c-.9.5-2 .5-2.9.1L2.3 15z"/></svg>Rotas</a>
-    <a href="#/explorar" data-tab="explorar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="m15.8 8.2-2.1 5.5-5.5 2.1 2.1-5.5z"/></svg>Explorar</a>
-    <a href="#/viagem" data-tab="viagem"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V5.5A1.5 1.5 0 0 1 10 4h4a1.5 1.5 0 0 1 1.5 1.5V7M3 12.5h18M10 12.5v2h4v-2"/></svg><span>Hospedagem e<br>experiências</span></a>
-    <a href="#/alertas" data-tab="alertas"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>Alertas</a>
-    <a href="#/config" data-tab="config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1"/></svg>Ajustes</a>
+  <nav class="tabs glass" id="tabs" hidden>
+    <div class="tabs-in" id="tabs-in"></div>
   </nav>
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script type="module" src="app.js?v=20261020c"></script>
+  <script type="module" src="app.js?v=20261020d"></script>
 </body>
 </html>
