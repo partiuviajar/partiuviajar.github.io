@@ -928,6 +928,9 @@ function hotelForm(d) {
       <label class="field"><span>Hóspedes</span><select class="input" name="adults">${[1, 2, 3, 4, 5, 6].map((n) => `<option ${n === adults ? "selected" : ""}>${n}</option>`).join("")}</select></label>
       <label class="field"><span>Tipo</span><select class="input" name="kind"><option value="hotel">Hotéis</option><option value="hostel">Hostels</option></select></label>
     </div>
+    <div class="field" id="stars-field" style="margin-top:14px"><span>Estrelas</span>
+      <div class="seg" id="stars-seg">${["", 2, 3, 4, 5].map((n) => `<button type="button" data-v="${n}" class="${n === "" ? "on" : ""}">${n ? `${n}★` : "Qualquer"}</button>`).join("")}</div>
+    </div>
     <div id="hotel-msg"></div>
     <button class="btn primary block" type="submit" style="margin-top:12px">Comparar preços nos sites</button>
     <p class="muted tiny" style="margin:8px 0 0">Busca no Google Hotels e mostra o preço de cada hotel no Booking, Expedia, Hoteis.com, Decolar, Agoda e outros. Leva cerca de 1 minuto.</p>
@@ -939,11 +942,20 @@ function bindHotelForm(d) {
   if (!f) return;
   if (hashParams.get("hoteis")) document.getElementById("hoteis")?.scrollIntoView?.({ block: "start" });
   const [ciIn, coIn, adIn, kindIn] = ["checkin", "checkout", "adults", "kind"].map((n) => f.elements.namedItem(n));
+  let stars = null;
+  const starsSeg = document.getElementById("stars-seg");
+  starsSeg?.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    stars = b.dataset.v ? Number(b.dataset.v) : null;
+    starsSeg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  });
+  // hostels não têm estrelas
+  kindIn.addEventListener("change", () => { document.getElementById("stars-field").hidden = kindIn.value === "hostel"; });
   ciIn.addEventListener("change", () => { if (coIn.value <= ciIn.value) coIn.value = addDays(ciIn.value, 7); });
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     const msg = document.getElementById("hotel-msg");
-    const row = { city_code: d.code, city_name: d.name, checkin: ciIn.value, checkout: coIn.value, adults: Number(adIn.value), kind: kindIn.value };
+    const row = { city_code: d.code, city_name: d.name, checkin: ciIn.value, checkout: coIn.value, adults: Number(adIn.value), kind: kindIn.value, stars: kindIn.value === "hotel" ? stars : null };
     const nights = daysBetween(row.checkin, row.checkout);
     if (!row.checkin || row.checkin <= todayIso()) { msg.innerHTML = `<div class="hint bad">O check-in precisa ser a partir de amanhã.</div>`; return; }
     if (nights < 1 || nights > 30) { msg.innerHTML = `<div class="hint bad">A estadia precisa ter de 1 a 30 noites.</div>`; return; }
@@ -952,7 +964,7 @@ function bindHotelForm(d) {
     try {
       // mesma busca nas últimas 6 h: reaproveita
       const cached = await q(sb.from("hotel_searches").select("id").eq("city_name", row.city_name).eq("checkin", row.checkin).eq("checkout", row.checkout)
-        .eq("adults", row.adults).eq("kind", row.kind).eq("status", "done").gte("created_at", new Date(Date.now() - 6 * 3600000).toISOString()).order("created_at", { ascending: false }).limit(1));
+        .eq("adults", row.adults).eq("kind", row.kind)[row.stars ? "eq" : "is"]("stars", row.stars).eq("status", "done").gte("created_at", new Date(Date.now() - 6 * 3600000).toISOString()).order("created_at", { ascending: false }).limit(1));
       const id = cached[0]?.id || (await q(sb.from("hotel_searches").insert(row).select("id").single())).id;
       location.hash = `#/hoteis/${id}`;
     } catch (err) { msg.innerHTML = `<div class="hint bad">${esc(friendlyError(err))}</div>`; btn.disabled = false; }
@@ -971,7 +983,7 @@ async function viewHotels(id) {
   const nights = daysBetween(row.checkin, row.checkout);
   return `<p><a href="javascript:history.back()" class="small">← Voltar</a></p>
     <h1 style="margin-bottom:2px">${row.kind === "hostel" ? "Hostels" : "Hotéis"} em ${esc(row.city_name)}</h1>
-    <div class="muted small">${esc(fmtDay(row.checkin))} → ${esc(fmtDay(row.checkout))} · ${nights} noite${nights > 1 ? "s" : ""} · ${row.adults} hóspede${row.adults > 1 ? "s" : ""}</div>
+    <div class="muted small">${esc(fmtDay(row.checkin))} → ${esc(fmtDay(row.checkout))} · ${nights} noite${nights > 1 ? "s" : ""} · ${row.adults} hóspede${row.adults > 1 ? "s" : ""}${row.stars ? ` · ${row.stars} estrelas` : ""}</div>
     <div class="seg" id="hotel-sort" style="margin-top:14px"><button type="button" data-v="rec">Recomendados</button><button type="button" data-v="price">Menor preço</button><button type="button" data-v="rating">Melhor nota</button></div>
     <div id="hotels-body" style="margin-top:14px">${hotelsBody(row)}</div>`;
 }
@@ -1094,7 +1106,7 @@ viewDestination.after = async () => {
 async function viewTrip() {
   const [routes, recent] = await Promise.all([
     q(sb.from("routes").select("*").order("created_at")),
-    q(sb.from("hotel_searches").select("id,city_name,checkin,checkout,adults,kind,status,created_at").order("created_at", { ascending: false }).limit(6)).catch(() => []),
+    q(sb.from("hotel_searches").select("id,city_name,checkin,checkout,adults,kind,stars,status,created_at").order("created_at", { ascending: false }).limit(6)).catch(() => []),
   ]);
   const dests = await loadDestinations(routes.map((r) => r.destination), "code,name,country_name,thumb,lat,experiences,experiences_at");
   // destino escolhido: o da URL ou, na primeira vez, o da primeira rota ativa
@@ -1142,7 +1154,7 @@ async function viewTrip() {
       ${tab === "hoteis" ? `${hotelForm({ code, name })}
         ${recent.length ? `<h2>Buscas recentes</h2><div class="card"><div class="list">${recent.map((h) => `<a class="item" href="#/hoteis/${h.id}" style="color:var(--text)">
           <div class="grow"><b>${h.kind === "hostel" ? "Hostels" : "Hotéis"} em ${esc(h.city_name)}</b>
-          <div class="muted small">${esc(fmtShort(h.checkin))} → ${esc(fmtShort(h.checkout))} · ${h.adults} hóspede${h.adults > 1 ? "s" : ""} · ${ago(h.created_at)}</div></div>
+          <div class="muted small">${esc(fmtShort(h.checkin))} → ${esc(fmtShort(h.checkout))} · ${h.adults} hóspede${h.adults > 1 ? "s" : ""}${h.stars ? ` · ${h.stars}★` : ""} · ${ago(h.created_at)}</div></div>
           <span class="badge ${h.status === "done" ? "good" : h.status === "error" ? "bad" : ""}">${h.status === "done" ? "pronta" : h.status === "error" ? "falhou" : "buscando"}</span></a>`).join("")}</div></div>` : ""}`
       : experiencesBlock({ name, experiences: d?.experiences, experiences_at: d?.experiences_at })}`
     : `<div class="card empty" style="margin-top:14px"><div class="big">🧳</div><p>Escolha um destino acima ou digite uma cidade.</p></div>`}`;

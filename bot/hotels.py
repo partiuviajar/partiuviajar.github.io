@@ -100,8 +100,12 @@ def _number(v) -> int | None:
     return int(digits) if digits else None
 
 
-def search_list(city: str, ts: str, kind: str = "hotel") -> list[dict]:
-    term = ("hostels em " if kind == "hostel" else "hotéis em ") + city
+def search_list(city: str, ts: str, kind: str = "hotel", stars: int | None = None) -> list[dict]:
+    # o Google aplica a categoria pedida no texto ("hotéis 4 estrelas em …") como filtro de verdade
+    if kind == "hostel":
+        term = f"hostels em {city}"
+    else:
+        term = f"hotéis {stars} estrelas em {city}" if stars else f"hotéis em {city}"
     data = _ds(_get(f"{BASE}/travel/search?q={quote(term)}&hl=pt-BR&gl=br&curr=BRL&ts={ts}"), 0)
     hotels = []
     for item in _g(data, 0, 0, 0, 1) or []:
@@ -154,7 +158,11 @@ def run(db: DB, search_id: str):
     ci, co = date.fromisoformat(row["checkin"]), date.fromisoformat(row["checkout"])
     ts = make_ts(ci, co, row["adults"] or 2)
     try:
-        hotels = search_list(row["city_name"], ts, row.get("kind") or "hotel")[:MAX_HOTELS]
+        stars = row.get("stars") if (row.get("kind") or "hotel") == "hotel" else None
+        hotels = search_list(row["city_name"], ts, row.get("kind") or "hotel", stars)
+        if stars:
+            hotels = [h for h in hotels if h["stars"] == stars] or hotels
+        hotels = hotels[:MAX_HOTELS]
         for h in hotels:
             h["page"] = hotel_page(h.pop("entity"), ts) if h.get("entity") else None
         save = lambda status, **extra: db.update("hotel_searches", {"id": f"eq.{search_id}"}, {"status": status, "results": hotels, **extra})

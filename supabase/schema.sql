@@ -272,6 +272,7 @@ create table if not exists public.hotel_searches (
   checkout date not null,
   adults int not null default 2 check (adults between 1 and 8),
   kind text not null default 'hotel' check (kind in ('hotel', 'hostel')),
+  stars int check (stars between 1 and 5),         -- só hotéis com essa categoria (null = qualquer)
   status text not null default 'pending',   -- pending | running | done | error
   started_at timestamptz,
   finished_at timestamptz,
