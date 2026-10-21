@@ -30,12 +30,12 @@ jobs:
         working-directory: bot
         env:
           SUPABASE_URL: https://zukcutypxxpxbioxupss.supabase.co
-          APP_URL: https://vitorwangg.github.io/radar-voos/
+          APP_URL: https://partiuviajar.github.io/
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
           CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_SUBJECT: https://github.com/vitorwangg/radar-voos
+          VAPID_SUBJECT: https://github.com/partiuviajar/partiuviajar.github.io
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}

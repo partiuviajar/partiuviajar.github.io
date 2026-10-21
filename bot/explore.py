@@ -27,7 +27,7 @@ COSTS_PER_RUN = 4
 EXPERIENCES_REFRESH = timedelta(days=7)
 DESTINATION_REFRESH = timedelta(days=60)
 DEFAULT_ORIGIN = "RIO"
-HEADERS = {"User-Agent": "radar-voos/1.0 (https://github.com/vitorwangg/radar-voos)"}
+HEADERS = {"User-Agent": "radar-voos/1.0 (https://github.com/partiuviajar/partiuviajar.github.io)"}
 SPARQL = "https://query.wikidata.org/sparql"
 ACCOUNTING_UNITS = {"CLF", "USN", "BOV", "COU", "MXV", "UYI", "UYW", "CHE", "CHW", "XDR"}
 # países em que o idioma oficial no Wikidata não é o que o viajante encontra na rua

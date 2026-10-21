@@ -21,7 +21,7 @@ create or replace function public.dispatch_copilot_request() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   perform net.http_post(
-    url := 'https://api.github.com/repos/vitorwangg/radar-voos/actions/workflows/copiloto.yml/dispatches',
+    url := 'https://api.github.com/repos/partiuviajar/partiuviajar.github.io/actions/workflows/copiloto.yml/dispatches',
     headers := jsonb_build_object(
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'github_dispatch_token'),
       'Accept', 'application/vnd.github+json',
