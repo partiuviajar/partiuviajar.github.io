@@ -686,3 +686,37 @@ html, body { overflow-x: hidden; }
 .eta { text-align: left; }
 .eta .progress { margin-top: 6px; height: 10px; }
 .eta .progress i { transition: width 1s linear; }
+
+/* ---------- planos, cadeados e assistente ---------- */
+.lock-tag { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: var(--warn); background: var(--warn-soft); border: 1px solid color-mix(in oklab, var(--warn) 25%, transparent); white-space: nowrap; }
+.lock-card { border: 1.5px dashed color-mix(in oklab, var(--warn) 55%, transparent) !important; background: linear-gradient(155deg, rgba(255, 244, 222, .85), rgba(255, 236, 200, .55)) !important; color: var(--foreground); }
+@media (prefers-color-scheme: dark) { .lock-card { background: rgba(240, 166, 58, .10) !important; } }
+.chips-row > button.locked { background: repeating-linear-gradient(135deg, var(--muted), var(--muted) 6px, transparent 6px, transparent 12px); color: var(--muted-foreground); font-size: 12px; border: 1px dashed var(--glass-border); }
+.fab-locked { color: var(--warn); border: 1px solid var(--glass-border); }
+.upgrade-fab { position: fixed; left: 14px; bottom: calc(100px + var(--bottom)); z-index: 35; display: flex; align-items: center; gap: 6px; border-radius: 999px; padding: 10px 14px; font-weight: 700; font-size: 13px; color: var(--primary); border: 1px solid var(--glass-border); box-shadow: var(--glass-hi), 0 10px 24px -10px rgba(53, 87, 245, .5); }
+.assistant-wrap { position: fixed; inset: 0; z-index: 60; background: rgba(10, 16, 40, .35); display: flex; align-items: flex-end; justify-content: center; padding: 12px; padding-bottom: calc(12px + var(--bottom)); }
+.assistant { width: 100%; max-width: 460px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; background: linear-gradient(155deg, rgba(255, 255, 255, .97), rgba(245, 248, 255, .93)) !important; }
+@media (prefers-color-scheme: dark) { .assistant { background: linear-gradient(155deg, rgba(36, 44, 74, .98), rgba(22, 28, 48, .96)) !important; } }
+.assistant-head { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.assistant-av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--gradient-brand); font-size: 18px; }
+.assistant-body { padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.bubble { max-width: 92%; padding: 10px 12px; border-radius: 18px; font-size: 14px; line-height: 1.4; }
+.bubble.bot { align-self: flex-start; background: var(--primary-soft); border-bottom-left-radius: 6px; }
+.bubble.me { align-self: flex-end; background: linear-gradient(180deg, #6a86ff, var(--primary)); color: #fff; border-bottom-right-radius: 6px; }
+.as-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.as-plan { background: rgba(255, 255, 255, .7); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; border: 1px solid var(--glass-border); }
+@media (prefers-color-scheme: dark) { .as-plan { background: rgba(255, 255, 255, .06); } }
+.as-plan.on { border: 2px solid var(--primary); }
+.as-plan ul { margin-top: 4px; padding-left: 0; display: flex; flex-direction: column; gap: 2px; }
+.as-choices { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.as-choices .btn { white-space: normal; text-align: left; justify-content: flex-start; }
+.plan-card { padding: 18px; }
+.plan-card.current { box-shadow: var(--glass-hi), 0 0 0 2px var(--good), var(--shadow-card); }
+.plan-card.gold { background: linear-gradient(155deg, rgba(232, 238, 255, .95), rgba(214, 226, 255, .6)); }
+@media (prefers-color-scheme: dark) { .plan-card.gold { background: linear-gradient(155deg, rgba(60, 78, 150, .5), rgba(30, 38, 70, .5)); } }
+.plan-feats { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.plan-feats li.off { color: var(--muted-foreground); }
+.sec-h { font-family: var(--font-display); font-size: 17px; font-weight: 800; margin: 18px 0 8px; }
+.adm-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+.adm-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sm-select { width: auto; padding: 7px 30px 7px 10px; font-size: 13px; }

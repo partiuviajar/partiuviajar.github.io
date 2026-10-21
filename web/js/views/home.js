@@ -3,6 +3,7 @@ import { sb, S, q, cached, esc, brl, ago, fmtShort, daysBetween, flag, photo, bg
 import { icon } from "../icons.js";
 import { pill, thermo, changeArrow, converter, bindConverter, countdownText, daysLeft, priceFor, bestDates } from "../ui.js";
 import { loadRouteStats } from "../data.js";
+import { limits, loadUsage, openUpgrade, myPlan } from "../plans.js";
 
 const TIPS = [
   "Voos nacionais costumam ficar mais baratos 1–3 meses antes; internacionais, 2–6 meses.",
@@ -90,6 +91,7 @@ export async function viewHome() {
 }
 
 viewHome.after = () => {
+  document.querySelectorAll("[data-upgrade]").forEach((b) => b.addEventListener("click", () => openUpgrade(`Seu plano ${myPlan().name} permite ${myPlan().routes} rotas ativas.`)));
   bindConverter("home-conv");
   startHero();
 };
@@ -157,7 +159,7 @@ function startHero() {
 function quick() {
   const tile = (href, ic, label, brand = false) => `<a class="quick pressable ${brand ? "bg-brand shadow-float" : "card"}" href="${href}"><span class="quick-ic">${icon(ic, 20)}</span><span>${label}</span></a>`;
   return `<div class="grid4">
-    ${tile("#/nova", "plus", "Nova rota", true)}
+    ${limits().routesLeft > 0 ? tile("#/nova", "plus", "Nova rota", true) : `<button type="button" class="quick card pressable" data-upgrade><span class="quick-ic">🔒</span><span>Nova rota</span></button>`}
     ${tile("#/explorar", "compass", "Promoções")}
     ${tile("#/guide", "earth", "Guide")}
     ${tile("#/hospedagem", "bed-double", "Hospedagem")}

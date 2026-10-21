@@ -5,20 +5,24 @@ import { icon } from "../icons.js";
 import { pill, seg, bindSeg, thermo, sparkline, changePill, verdictPill, verdictCard, buyVerdict, tripStart, countdownText, tripRange,
   longWindows, stayOk, stayRange, inScope, inScopeLong, lastCheck, cheapest, summary, priceFor, googleUrl, priceChart, calendarRange, autocomplete, back, secTitle } from "../ui.js";
 import { loadRouteStats } from "../data.js";
+import { myPlan, limits, loadUsage, lockTag, planFor, openUpgrade } from "../plans.js";
 
 // ---------------------------------------------------------------------------
 // Lista de rotas
 // ---------------------------------------------------------------------------
 export async function viewRoutes() {
-  const { stats } = await loadRouteStats();
+  const [{ stats }] = await Promise.all([loadRouteStats(), loadUsage()]);
   const active = stats.filter((s) => s.r.active).length;
+  const p = myPlan(), full = active >= p.routes;
   return `<main class="page">
-    <div class="page-title"><h1>Suas rotas</h1><p>${active} de 10 ativas · o robô vigia 24 h por dia</p></div>
+    <div class="page-title"><h1>Suas rotas</h1><p>${active} de ${p.routes} rotas ativas · ${p.emoji} ${p.name} · o robô vigia 24 h por dia</p></div>
+    ${full ? `<button type="button" class="card pad row between pressable lock-card" data-upgrade style="width:100%;text-align:left"><span><b>🔒 Você usou as ${p.routes} rotas do seu plano</b><br><span class="xs muted">Quer vigiar mais destinos? ${planFor((x) => x.routes > p.routes).name} tem ${planFor((x) => x.routes > p.routes).routes} rotas.</span></span>${icon("chevron-right", 20)}</button>` : ""}
     ${!stats.length ? `<div class="card pad center"><div style="font-size:40px">✈️</div><p class="b">Nenhuma rota ainda</p><p class="sm muted" style="margin-top:4px">Toque em “Nova rota” para começar.</p></div>` : ""}
     <div class="stack" style="--gap:16px">${stats.map((s, i) => routeCard(s, i)).join("")}</div>
-    <a class="fab bg-brand shadow-float pressable" href="#/nova">${icon("plus", 20)} Nova rota</a>
+    ${full ? `<button type="button" class="fab fab-locked glass pressable" data-upgrade>🔒 Nova rota</button>` : `<a class="fab bg-brand shadow-float pressable" href="#/nova">${icon("plus", 20)} Nova rota</a>`}
   </main>`;
 }
+viewRoutes.after = () => document.querySelectorAll("[data-upgrade]").forEach((b) => b.addEventListener("click", () => openUpgrade(`Seu plano ${myPlan().name} permite ${myPlan().routes} rotas ativas.`)));
 
 function routeCard(s, i) {
   const { r, best } = s;
@@ -282,6 +286,16 @@ export async function viewForm(id = null) {
     r = await q(sb.from("routes").select("*").eq("id", id).maybeSingle());
     if (!r) return `<main class="page">${back("#/rotas", "Rotas")}<div class="card pad">Rota não encontrada.</div></main>`;
   }
+  if (!id) {
+    await loadUsage();
+    if (limits().routesLeft <= 0) {
+      const p = myPlan(), next = planFor((x) => x.routes > p.routes);
+      return `<main class="page">${back("#/rotas", "Rotas")}
+        <section class="card prep"><div style="font-size:44px">🔒</div><h1 class="display xb" style="font-size:24px">Você já usa as ${p.routes} rotas do ${p.name}</h1>
+        <p class="sm muted" style="margin:6px 0 16px">Pause ou apague uma rota para cadastrar outra, ou passe para o <b>${next.emoji} ${next.name}</b> e vigie até ${next.routes} destinos.</p>
+        <button type="button" class="btn big block bg-brand shadow-float pressable" data-upgrade style="font-size:16px">${icon("sparkles", 20)} Fazer upgrade</button></section></main>`;
+    }
+  }
   const pre = id ? new URLSearchParams() : S.params;
   let nextMonth = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; })();
   if (pre.get("mes")) nextMonth = pre.get("mes") + "-01";
@@ -294,7 +308,7 @@ export async function viewForm(id = null) {
     date_mode: r?.date_mode || (pre.get("de") ? "fixed" : "month"),
     adults: r?.adults || Math.max(1, Math.min(9, Number(pre.get("adultos")) || 1)),
     max_stops: r ? (r.max_stops == null ? "" : String(r.max_stops)) : "",
-    every: r?.check_every_hours || 3,
+    every: Math.max(r?.check_every_hours || 3, myPlan().minInterval),
   };
   const preStay = pre.get("dias") ? Math.max(1, Math.min(60, Number(pre.get("dias")))) : 7;
   const v = (x, d = "") => esc(x ?? d);
@@ -339,7 +353,10 @@ export async function viewForm(id = null) {
         <input type="range" name="threshold_pct" min="5" max="40" step="1" value="${r?.threshold_pct || 15}">
         <label class="field"><span>Preço-alvo (opcional, total em R$)</span><input class="input" type="number" name="target_price" min="1" inputmode="numeric" placeholder="R$ 2.500" value="${v(r?.target_price)}"></label>
         <p class="xs sb muted" style="margin-bottom:-6px">Verificar a cada</p>
-        <div class="chips-row" id="every">${[1, 2, 3, 6, 12].map((h) => `<button type="button" class="pressable ${form.every === h ? "on" : ""}" data-h="${h}">${h}h</button>`).join("")}</div>`)}
+        <div class="chips-row" id="every">${[1, 2, 3, 6, 12].map((h) => h < myPlan().minInterval
+          ? `<button type="button" class="pressable locked" data-locked="${h}" title="Disponível no ${planFor((x) => x.minInterval <= h).name}">🔒 ${h}h</button>`
+          : `<button type="button" class="pressable ${form.every === h ? "on" : ""}" data-h="${h}">${h}h</button>`).join("")}</div>
+        ${myPlan().minInterval > 1 ? `<p class="tiny muted">🔒 Verificar a cada 1 h ou 2 h é do ${planFor((x) => x.minInterval <= 1).name}.</p>` : ""}`)}
       ${id ? `<p class="xs muted" style="margin-top:16px">Se você mudar origem, destino, datas, passageiros ou escalas, o histórico de preços desta rota recomeça (os alertas antigos ficam guardados).</p>` : ""}
       <div id="form-msg" style="margin-top:16px"></div>
       <button class="btn big block bg-brand shadow-float pressable" type="submit" style="margin-top:16px">${id ? "Salvar alterações" : "Começar a vigiar"}</button>
@@ -348,6 +365,7 @@ export async function viewForm(id = null) {
 }
 
 viewForm.after = () => {
+  document.querySelector("[data-upgrade]")?.addEventListener("click", () => openUpgrade(`Seu plano ${myPlan().name} permite ${myPlan().routes} rotas ativas.`));
   const el = document.getElementById("route-form");
   if (!el) return;
   const sync = () => {
@@ -367,6 +385,7 @@ viewForm.after = () => {
   }));
   document.getElementById("every").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.locked) return openUpgrade(`Verificar a cada ${b.dataset.locked} h é do ${planFor((x) => x.minInterval <= Number(b.dataset.locked)).name}.`, "gold");
     form.every = Number(b.dataset.h);
     document.querySelectorAll("#every button").forEach((x) => x.classList.toggle("on", x === b));
   });
@@ -472,6 +491,7 @@ async function saveRoute(e) {
       id = (await q(sb.from("routes").insert({ ...row, active: true }).select("id").single())).id;
     }
     invalidate("routes");
+    loadUsage();
     toast(form.id ? "✅ Rota atualizada! Nova verificação em até ~15 min." : "✅ Rota criada! O robô já vai começar a vigiar.", 4500);
     location.hash = `#/rota/${id}`;
   } catch (err) {

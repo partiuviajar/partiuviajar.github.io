@@ -69,6 +69,7 @@ export async function q(promise) {
 export function friendlyError(error) {
   const m = error?.message || String(error);
   if (/Limite de \d+ rotas/.test(m)) return "Você já tem 10 rotas ativas. Pause ou apague uma antes.";
+  if (/LIMITE_/.test(m)) { dispatchEvent(new CustomEvent("limit-error", { detail: error })); return "Isso não está incluído no seu plano."; }
   if (/row-level security|permission denied/i.test(m)) return "Este e-mail não tem permissão para usar o app.";
   if (/Invalid login credentials/i.test(m)) return "E-mail ou senha incorretos.";
   if (/already registered/i.test(m)) return "Esse e-mail já tem conta. Use “Entrar”.";
@@ -149,13 +150,18 @@ export async function toggleFav(btn) {
   paint(on);
   try {
     if (on) {
-      const row = await q(sb.from("favorites").upsert({ kind, key, title, subtitle: sub || null, photo: photo || null, link: link || null }, { onConflict: "kind,key" }).select("*").single());
+      const fav = { kind, key, title, subtitle: sub || null, photo: photo || null, link: link || null };
+      const row = S.profile?.legacy
+        ? await q(sb.from("favorites").upsert(fav, { onConflict: "kind,key" }).select("*").single())
+        : await q(sb.from("favorites").upsert({ ...fav, user_id: S.session.user.id }, { onConflict: "user_id,kind,key" }).select("*").single());
       favs.rows.unshift(row); favs.set.add(favKey(kind, key));
       toast("❤️ Salvo nos favoritos");
+      dispatchEvent(new CustomEvent("usage-changed"));
     } else {
       await q(sb.from("favorites").delete().eq("kind", kind).eq("key", key));
       favs.rows = favs.rows.filter((r) => !(r.kind === kind && r.key === key)); favs.set.delete(favKey(kind, key));
       toast("Removido dos favoritos");
+      dispatchEvent(new CustomEvent("usage-changed"));
     }
   } catch (err) { paint(!on); toast(friendlyError(err)); }
 }

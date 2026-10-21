@@ -3,14 +3,18 @@
 import { sb, S, q, etaBox, esc, brl, ago, fmtShort, todayIso, addDays, daysBetween, toast, friendlyError, flag, photo, bg, loadDestinations, favBtn } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, back } from "../ui.js";
+import { myPlan, limits, loadUsage, planFor, openUpgrade } from "../plans.js";
 
 // ---------------------------------------------------------------------------
 // Apresentação
 // ---------------------------------------------------------------------------
 export async function viewCopilot() {
-  const recent = await q(sb.from("copilot_requests").select("id,created_at,status,answers,result").order("created_at", { ascending: false }).limit(5)).catch(() => []);
-  const month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
-  const usedThisMonth = recent.filter((r) => new Date(r.created_at) >= month).length;
+  const [recent] = await Promise.all([
+    q(sb.from("copilot_requests").select("id,created_at,status,answers,result").order("created_at", { ascending: false }).limit(5)).catch(() => []),
+    loadUsage(),
+  ]);
+  const p = myPlan(), left = limits().copilotLeft, u = S.usage || {};
+  const quota = p.copilotWeek ? `${u.copilot_week || 0} de ${p.copilotWeek} nesta semana` : `${u.copilot_month || 0} de ${p.copilotMonth} neste mês`;
   return `<main class="page">
     <section class="cop-hero bg-brand shadow-float">
       <div class="cop-art" aria-hidden="true"><span>🧳</span><span>✈️</span><span>🏝️</span><span>💰</span><span>✨</span></div>
@@ -25,8 +29,10 @@ export async function viewCopilot() {
       ${step("✨🗺️", "3. Duas viagens sob medida", "A IA escolhe as que mais combinam e monta roteiro, custos e dicas.")}
     </div>
 
-    <a class="btn big block bg-brand shadow-float pressable" href="#/copiloto/novo" style="font-size:17px">${icon("sparkles", 22)} Descobrir a viagem que cabe no meu bolso</a>
-    <p class="xs muted center">Fica pronto em poucos minutos e avisamos por notificação.${usedThisMonth ? ` Você fez ${usedThisMonth} consulta${usedThisMonth > 1 ? "s" : ""} este mês.` : ""}</p>
+    ${left > 0
+      ? `<a class="btn big block bg-brand shadow-float pressable" href="#/copiloto/novo" style="font-size:17px">${icon("sparkles", 22)} Descobrir a viagem que cabe no meu bolso</a>`
+      : `<button type="button" class="btn big block pressable lock-card" data-upgrade style="font-size:16px">🔒 Você já usou o Copiloto ${p.copilotWeek ? "desta semana" : "deste mês"}</button>`}
+    <p class="xs muted center">Fica pronto em poucos minutos e avisamos por notificação. <b>${p.emoji} ${p.name}:</b> ${quota}.${left <= 0 ? ` Mais consultas no ${planFor((x) => x.copilotMonth > p.copilotMonth).name}.` : ""}</p>
 
     ${recent.length ? `<div class="sec-title"><h2>Suas consultas</h2></div>
       <div>${recent.map((r, i) => {
@@ -42,6 +48,7 @@ export async function viewCopilot() {
     <p class="tiny muted center" style="padding-top:4px">Preços de passagem e hotel são reais (Travelpayouts e Google Hotels). Comida, transporte e passeios são estimativas da IA (Google Gemini, que pode usar o que é enviado para melhorar os modelos).</p>
   </main>`;
 }
+viewCopilot.after = () => document.querySelector("[data-upgrade]")?.addEventListener("click", () => openUpgrade(`Seu plano ${myPlan().name} inclui ${myPlan().copilotWeek ? `${myPlan().copilotWeek} consulta por semana` : `${myPlan().copilotMonth} consulta${myPlan().copilotMonth > 1 ? "s" : ""} por mês`} do Copiloto.`));
 const step = (emoji, title, text) => `<div class="card cop-step"><span class="cop-step-e">${emoji}</span><div><p class="b">${title}</p><p class="sm muted">${text}</p></div></div>`;
 
 // ---------------------------------------------------------------------------
@@ -123,7 +130,9 @@ function nextMonths() {
 }
 const monthsLabel = (ms = []) => [...ms].sort().map((m) => `${MES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`).join(", ") || "–";
 
-export function viewCopilotForm() {
+export async function viewCopilotForm() {
+  await loadUsage();
+  if (limits().copilotLeft <= 0) { location.replace("#/copiloto"); return ""; }
   const start = addDays(todayIso(), 30);
   A = A || { budget: null, adults: 2, children: 0, months: [], date_from: start, date_to: addDays(start, 60), min_days: 5, max_days: 10, climate: null, snow: false, beach: null, beach_vibe: "calm", scope: "any", passport: true, us_visa: false, interests: [], pace: "slow", notes: "", origin: "RIO" };
   at = Math.min(at, visible().length - 1);
@@ -180,6 +189,7 @@ function readStep() {
 
 function bindForm() {
   const root = document.getElementById("cop-form");
+  if (!root) return;
   root.querySelectorAll("[data-budget]").forEach((b) => b.addEventListener("click", () => { A.budget = Number(b.dataset.budget); redraw(); }));
   document.getElementById("budget")?.addEventListener("input", (e) => {
     const n = e.target.value.replace(/\D/g, "");
@@ -225,6 +235,7 @@ function bindForm() {
       const answers = { ...A, passport: A.scope === "national" ? false : A.passport, us_visa: A.scope === "national" ? false : A.us_visa };
       const row = await q(sb.from("copilot_requests").insert({ answers }).select("id").single());
       at = 0;
+      loadUsage();
       location.hash = `#/copiloto/${row.id}`;
     } catch (err) {
       send.disabled = false;

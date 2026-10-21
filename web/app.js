@@ -7,6 +7,7 @@ import { viewGuideIndex, viewGuide } from "./js/views/guide.js";
 import { viewStay, viewHotels } from "./js/views/stay.js";
 import { viewAlerts, viewSettings, viewLogin, viewFavorites } from "./js/views/misc.js";
 import { viewCopilot, viewCopilotForm, viewCopilotResult } from "./js/views/copilot.js";
+import { loadProfile, loadUsage, gateScreen, upgradeFab, openUpgrade, handleLimitError, viewPlans, viewAdmin, isAdmin } from "./js/plans.js";
 
 const $view = document.getElementById("view");
 const SKELETON = `<main class="page"><div class="skeleton" style="height:180px;border-radius:var(--r-3xl)"></div><div class="skeleton" style="height:96px"></div><div class="skeleton" style="height:96px"></div></main>`;
@@ -29,6 +30,8 @@ const ROUTES = [
   [/^#\/alertas$/, viewAlerts],
   [/^#\/config$/, viewSettings],
   [/^#\/favoritos$/, viewFavorites],
+  [/^#\/planos$/, viewPlans],
+  [/^#\/admin$/, viewAdmin],
   [/^#\/copiloto$/, viewCopilot],
   [/^#\/copiloto\/novo$/, viewCopilotForm],
   [/^#\/copiloto\/([\w-]+)$/, viewCopilotResult],
@@ -50,6 +53,12 @@ function shell(hash, logged) {
     const on = active(hash);
     return `<a class="tab pressable ${on ? "active" : ""} ${label === "Copiloto" ? "tab-copilot" : ""}" href="${href}"><span class="tab-ic">${icon(ic, 20, "", on ? 2.4 : 2)}</span><span>${label}</span></a>`;
   }).join("");
+  document.getElementById("upgrade-fab")?.remove();
+  const fab = upgradeFab();
+  if (fab && !/^#\/(admin|planos|login)/.test(hash)) {
+    document.body.insertAdjacentHTML("beforeend", fab);
+    document.getElementById("upgrade-fab").addEventListener("click", () => openUpgrade());
+  }
   const bell = document.getElementById("alerts-btn");
   bell.classList.toggle("on", hash.startsWith("#/alertas"));
   bell.querySelector(".tab-badge")?.remove();
@@ -64,7 +73,14 @@ async function render() {
   const logged = !!S.session;
   if (!logged && hash !== "#/login") { location.replace("#/login"); return; }
   if (logged && hash === "#/login") { location.replace("#/"); return; }
-  shell(hash, logged);
+  if (logged && !S.profile) await loadProfile();
+  const gated = logged && S.profile && S.profile.status !== "active";
+  shell(hash, logged && !gated);
+  if (gated) {
+    $view.innerHTML = gateScreen();
+    document.getElementById("gate-out")?.addEventListener("click", async () => { await sb.auth.signOut(); location.hash = "#/login"; });
+    return;
+  }
   const seq = ++S.seq;
   S.ambient = null;  // a tela define a foto de fundo, se tiver
   const match = ROUTES.find(([re]) => re.test(hash));
@@ -104,6 +120,17 @@ async function updateBotStatus() {
     el.title = hb ? `Última execução: ${fmtDateTime(hb)}` : "";
     el.hidden = false;
     if (S.newAlerts !== alerts.length) { S.newAlerts = alerts.length; shell((location.hash || "#/").split("?")[0], true); }
+    if (isAdmin() && !S.profile?.legacy) {
+      const [p, u] = await Promise.all([
+        sb.from("profiles").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        sb.from("upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      ]);
+      const n = (p.count || 0) + (u.count || 0);
+      const gear = document.getElementById("settings-btn");
+      gear.querySelector(".tab-badge")?.remove();
+      if (n) gear.insertAdjacentHTML("beforeend", `<span class="tab-badge" style="right:-4px;top:-4px">${n}</span>`);
+      gear.style.position = "relative";
+    }
   } catch { el.hidden = true; }
 }
 
@@ -124,20 +151,24 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catc
 sb.auth.onAuthStateChange((event, s) => {
   const was = !!S.session;
   S.session = s;
-  if (event === "SIGNED_IN" && !was) { location.hash = "#/"; loadFavs(true).then(render); updateBotStatus(); }
-  if (event === "SIGNED_OUT") render();
+  if (event === "SIGNED_IN" && !was) { location.hash = "#/"; loadProfile().then(() => loadFavs(true)).then(render); updateBotStatus(); }
+  if (event === "SIGNED_OUT") { S.profile = null; S.usage = null; document.getElementById("upgrade-fab")?.remove(); render(); }
 });
+// erros de limite do plano (vindos do banco) abrem o assistente de upgrade
+addEventListener("limit-error", (e) => handleLimitError(e.detail));
+addEventListener("usage-changed", () => loadUsage());
 window.addEventListener("hashchange", render);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible" || !S.session) return;
   invalidate();
+  loadUsage();
   updateBotStatus();
   if (/^#\/(rotas|rota\/|alertas)|^#\/?$/.test(location.hash || "#/")) render();
 });
 
 const { data } = await sb.auth.getSession();
 S.session = data.session;
-if (S.session) await loadFavs();
+if (S.session) { await loadProfile(); await loadFavs(); }
 render();
 if (S.session) updateBotStatus();
 setInterval(() => S.session && updateBotStatus(), 5 * 60000);

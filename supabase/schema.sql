@@ -405,3 +405,5 @@ end $$;
 
 revoke all on public.route_trend, public.route_latest from anon;
 grant select on public.route_trend, public.route_latest to authenticated;
+
+-- Multiusuário e planos: ver supabase/migrations/2026-10-21-multiusuario-planos.sql (roda depois deste arquivo).

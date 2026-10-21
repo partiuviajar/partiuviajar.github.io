@@ -3,6 +3,7 @@ import { sb, S, q, esc, brl, ago, fmtShort, fmtDateTime, toast, friendlyError, u
 import { VAPID_PUBLIC_KEY } from "../../config.js";
 import { icon } from "../icons.js";
 import { pill, seg, bindSeg } from "../ui.js";
+import { myPlan, isAdmin, openUpgrade, PLANS, loadUsage } from "../plans.js";
 
 const rerender = () => dispatchEvent(new HashChangeEvent("hashchange"));
 
@@ -46,7 +47,7 @@ const FAV_TABS = [["guide", "🧭 Guias"], ["tour", "🎟️ Experiências"], ["
 export async function viewFavorites() {
   await loadFavs(true);
   return `<main class="page">
-    <div class="page-title"><h1>Favoritos</h1><p>Guias, experiências e hospedagens que você salvou com o ❤️.</p></div>
+    <div class="page-title"><h1>Favoritos</h1><p>Guias, experiências e hospedagens que você salvou com o ❤️.${myPlan().guideFavs ? ` <b>${favs.rows.filter((r) => r.kind === "guide").length} de ${myPlan().guideFavs} guias</b> no ${myPlan().name}.` : ""}</p></div>
     ${seg("fav-tabs", FAV_TABS.map(([k, l]) => [k, `${l} <span class="muted">${favs.rows.filter((r) => r.kind === k).length}</span>`]), favTab)}
     <div id="fav-list"></div>
   </main>`;
@@ -90,7 +91,7 @@ async function currentPushSub() {
 export async function viewSettings() {
   const [s, runs, subs, sub] = await Promise.all([
     q(sb.from("settings").select("*").eq("id", 1).maybeSingle()),
-    q(sb.from("bot_runs").select("*").order("started_at", { ascending: false }).limit(6)),
+    isAdmin() ? q(sb.from("bot_runs").select("*").order("started_at", { ascending: false }).limit(6)) : Promise.resolve([]),
     q(sb.from("push_subscriptions").select("device,created_at")),
     currentPushSub().catch(() => null),
   ]);
@@ -112,19 +113,28 @@ export async function viewSettings() {
     <section class="cta bg-brand shadow-float">${icon("bell", 28)}<h3 style="font-size:20px" class="b">${sub ? "Notificações ativas" : "Ativar notificações neste aparelho"}</h3><p class="sm" style="opacity:.9">${esc(pushNote)}</p>
       ${canPush ? (sub ? `<button class="btn-lime pressable" id="push-off">Desativar neste aparelho</button>` : `<button class="btn-lime pressable" id="push-on">Ativar agora</button>`) : ""}</section>
 
-    <section class="card">
+    <section class="card pad row between" style="gap:12px">
+      <div><p class="xs muted">Seu plano</p><p class="b">${myPlan().emoji} ${myPlan().name}${isAdmin() ? " · administrador" : ""}</p></div>
+      <a class="btn sm primary pressable" href="#/planos">Ver planos</a>
+    </section>
+    ${isAdmin() ? `<a class="card pad row between pressable" href="#/admin" style="color:inherit"><span class="row" style="gap:10px">${icon("settings", 18)}<b>Painel do administrador</b></span>${icon("chevron-right", 18)}</a>` : ""}
+
+    ${isAdmin() ? `<section class="card">
       ${channel("message-circle", "WhatsApp", "notify_whatsapp", ch.whatsapp ? "configurado" : "não configurado")}
       ${channel("smartphone", "Notificação do app", "notify_push", `${subs.length} aparelho${subs.length === 1 ? "" : "s"}`)}
       ${channel("send", "Telegram", "notify_telegram", ch.telegram ? "configurado" : "não configurado")}
       <div class="pad"><button class="btn block pressable" id="test-btn" ${testPending ? "disabled" : ""} style="border-radius:var(--r-xl);padding:12px">${testPending ? "Teste pedido: chega em até ~15 min" : "Enviar notificação de teste"}</button></div>
-    </section>
+    </section>` : `<section class="card">
+      <div class="channel"><span class="channel-ic">${icon("smartphone", 20)}</span><div class="grow"><p class="sb">Notificação do app</p><p class="xs muted">${subs.length ? `ativa em ${subs.length} aparelho${subs.length === 1 ? "" : "s"}` : "ative no cartão acima"}</p></div>${subs.length ? pill("✅ ligada", "good") : pill("desligada")}</div>
+      <div class="channel"><span class="channel-ic">${icon("message-circle", 20)}</span><div class="grow"><p class="sb">Alertas no WhatsApp</p><p class="xs muted">${myPlan().whatsapp ? "em breve para o seu plano" : `disponível no ${PLANS.silver.name}`}</p></div>${myPlan().whatsapp ? pill("em breve", "primary") : `<button type="button" class="lock-tag pressable" id="wa-lock">🔒 ${PLANS.silver.name}</button>`}</div>
+    </section>`}
 
-    <section class="card pad">
+    ${!isAdmin() ? "" : `<section class="card pad">
       <div class="row between" style="margin-bottom:12px"><h3 class="b">Robô</h3>${pill(!hb ? "● parado" : mins < 75 ? "● ativo · a cada 15 min" : mins < 240 ? "● atrasado" : "● parado", mins < 75 ? "good" : mins < 240 ? "warn" : "bad")}</div>
       <ul>${runs.map((r, i) => `<li style="margin-top:${i ? 10 : 0}px"><div class="row sm" style="gap:12px"><span class="dot ${r.status === "ok" || r.status === "running" ? "" : "warn"}"></span><span class="grow truncate">${esc((r.summary || "").split("\n").find((l) => l.trim()) || (r.status === "running" ? "rodando…" : "sem mudanças"))}</span><span class="xs muted">${ago(r.started_at)}</span></div>
         ${r.summary && r.summary.includes("\n") ? `<details><summary class="xs muted" style="margin-left:20px;cursor:pointer">ver detalhes</summary><pre class="log">${esc(r.summary)}</pre></details>` : ""}</li>`).join("") || `<li class="sm muted">Ainda sem execuções registradas.</li>`}</ul>
       <p class="xs muted" style="margin-top:10px">Última execução: ${hb ? `${fmtDateTime(hb)} (${ago(hb)})` : "–"} · Aviasales ${ch.aviasales ? "ativo" : "sem token"}</p>
-    </section>
+    </section>`}
 
     <section class="card pad stack">
       <h3 class="b row">${icon("radar", 16)} Como quer ser chamado?</h3>
@@ -141,6 +151,7 @@ export async function viewSettings() {
 }
 
 viewSettings.after = () => {
+  document.getElementById("wa-lock")?.addEventListener("click", () => openUpgrade(`Alertas no WhatsApp são do ${PLANS.silver.name} em diante.`, "silver"));
   document.querySelectorAll("[data-set]").forEach((sw) => sw.addEventListener("click", async () => {
     const on = sw.getAttribute("aria-checked") !== "true";
     sw.setAttribute("aria-checked", String(on));
@@ -161,7 +172,7 @@ viewSettings.after = () => {
       let sub = await reg.pushManager.getSubscription();
       if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(VAPID_PUBLIC_KEY) });
       const j = sub.toJSON();
-      await q(sb.from("push_subscriptions").upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, device: deviceName() }));
+      await q(sb.from("push_subscriptions").upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, device: deviceName(), ...(S.profile?.legacy ? {} : { user_id: S.session.user.id }) }));
       toast("✅ Notificações ativadas! Use “Enviar notificação de teste” para conferir.", 4500);
       rerender();
     } catch (err) { e.currentTarget.disabled = false; toast(friendlyError(err), 5000); }
@@ -193,6 +204,7 @@ export function viewLogin() {
       <p class="sm muted">Vigia preços de passagens 24 h e avisa quando ficam abaixo do normal.</p></div>
     <form class="card pad stack" id="login-form">
       <div class="seg" id="login-mode"><button type="button" class="on" data-m="in">Entrar</button><button type="button" data-m="up">Criar conta</button></div>
+      <label class="field" id="name-field" hidden><span>Seu nome</span><input class="input" type="text" name="name" autocomplete="name" placeholder="Como quer ser chamado"></label>
       <label class="field"><span>E-mail</span><input class="input" type="email" name="email" autocomplete="email" required></label>
       <label class="field"><span>Senha</span><input class="input" type="password" name="password" autocomplete="current-password" minlength="6" required></label>
       <button class="btn big block bg-brand shadow-float pressable" type="submit" style="font-size:16px">Entrar</button>
@@ -210,6 +222,7 @@ viewLogin.after = () => {
     mode = b.dataset.m;
     form.querySelectorAll("#login-mode button").forEach((x) => x.classList.toggle("on", x === b));
     form.querySelector("[type=submit]").textContent = mode === "in" ? "Entrar" : "Criar conta";
+    document.getElementById("name-field").hidden = mode === "in";
     f("password").autocomplete = mode === "in" ? "current-password" : "new-password";
   });
   form.addEventListener("submit", async (e) => {
@@ -220,8 +233,10 @@ viewLogin.after = () => {
     try {
       if (mode === "in") await q(sb.auth.signInWithPassword({ email, password }));
       else {
-        const data = await q(sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }));
-        if (!data.session) msg.innerHTML = `<div class="hint">Conta criada! Abra o e-mail de confirmação e depois entre aqui.</div>`;
+        const name = f("name").value.trim();
+        if (!name) { msg.innerHTML = `<div class="hint bad">Diga como quer ser chamado.</div>`; return; }
+        const data = await q(sb.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: location.origin + location.pathname } }));
+        if (!data.session) msg.innerHTML = `<div class="hint">Conta criada! Abra o e-mail de confirmação e depois entre aqui. Seu acesso é liberado pelo administrador.</div>`;
       }
     } catch (err) { msg.innerHTML = `<div class="hint bad">${esc(friendlyError(err))}</div>`; }
     finally { btn.disabled = false; }
