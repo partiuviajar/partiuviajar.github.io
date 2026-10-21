@@ -32,6 +32,7 @@ export async function viewHome() {
     .filter((c) => c !== promo?.destination && photo(allDest[c])).slice(0, 2);
   const tip = TIPS[new Date().getDate() % TIPS.length];
   S.current = { slides };
+  S.ambient = photo(slides[0]?.dest, 500);
   const alert = lastAlert[0];
 
   if (!stats.length) {
@@ -78,7 +79,7 @@ export async function viewHome() {
 
     <div class="bento md4">
       ${promo ? promoTile(promo, allDest) : ""}
-      ${guideCodes.map((c) => { const d = allDest[c]; return `<a class="photo-tile pressable" href="#/guide/${esc(c)}">
+      ${guideCodes.map((c) => { const d = allDest[c]; return `<a class="photo-tile pressable ${guideCodes.length === 1 ? "span2" : ""}" href="#/guide/${esc(c)}">
         <span class="ph" ${bg(photo(d, 500))}></span><span class="bg-fade"></span>
         <span class="tl">${pill("Guide", "plain")}</span>
         <div class="bottom" style="padding:12px"><div class="grow"><p class="display b lg truncate">${flag(d.country_code)} ${esc(d.name)}</p><p class="tiny truncate" style="opacity:.85">${esc(d.country_name || "")}</p></div></div>
@@ -114,7 +115,8 @@ function heroInfo(s) {
   return `<div class="row between" style="align-items:flex-end;gap:12px">
       <div class="grow fade-up">
         ${s.verdict ? `<p class="xs" style="opacity:.8;font-weight:500">${s.verdict.emoji} ${esc(s.verdict.title)}</p>` : ""}
-        <p class="display b truncate" style="font-size:24px;line-height:32px">${esc(place(s.r, "origin"))} → ${esc(place(s.r, "destination"))}</p>
+        <p class="xs" style="opacity:.85">${esc(place(s.r, "origin"))} →</p>
+        <p class="display b truncate" style="font-size:26px;line-height:30px">${esc(place(s.r, "destination"))}</p>
         <p class="xs truncate" style="opacity:.8">${countdownText(s.start) ? `✈️ ${countdownText(s.start)} · ` : ""}${s.best?.return_date ? `${fmtShort(s.best.depart_date)} → ${fmtShort(s.best.return_date)}` : s.best ? fmtShort(s.best.depart_date) : ""}</p>
       </div>
       <span style="text-align:right;flex:none"><span class="price-chip">${brl(s.price)}</span><p class="tiny" style="opacity:.85;margin-top:4px">${esc(priceFor(s.r, s.best).short)}</p></span>

@@ -25,6 +25,7 @@ export async function viewStay() {
   const co = ate && ate > ci && daysBetween(ci, ate) <= 30 ? ate : addDays(ci, 7);
   const adults = Math.max(1, Math.min(8, Number(p.get("adultos")) || route?.adults || 2));
   S.current = { stay: { code, name: opts.get(code), adults, kind: "hotel", stars: null, opts } };
+  S.ambient = photo(dests[code], 500);
 
   return `<main class="page">
     <div class="page-title"><h1>Hospedagem</h1><p>Um hotel, todos os sites: veja onde está mais barato.</p></div>
@@ -51,7 +52,7 @@ export async function viewStay() {
         const [a, b] = stayRange(r);
         const d = dests[r.destination];
         const q2 = new URLSearchParams({ d: r.destination, nome: d?.name || place(r, "destination"), de: a, ate: b, adultos: String(r.adults) });
-        return `<a class="card trip-card pressable" href="#/hospedagem?${q2}"><span class="ph" style="display:block;height:112px;background:var(--gradient-brand) center/cover" ${bg(photo(d, 500))}></span>
+        return `<a class="card trip-card pressable" href="#/hospedagem?${q2}"><span class="ph" style="display:block;height:112px;background:${photo(d, 500) ? `url('${esc(photo(d, 500))}')` : "var(--gradient-brand)"} center/cover no-repeat"></span>
           <div class="pad-s"><p class="b truncate">${esc(d?.name || place(r, "destination"))}</p><p class="xs muted truncate">${fmtShort(a)} → ${fmtShort(b)} · ${r.adults} hóspede${r.adults > 1 ? "s" : ""}</p>
           <p class="xs sb primary-t" style="margin-top:4px">Comparar hotéis nessas datas →</p></div></a>`;
       }).join("")}</div>` : ""}

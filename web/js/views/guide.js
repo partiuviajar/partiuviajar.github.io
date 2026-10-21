@@ -193,6 +193,7 @@ export async function viewGuide(code) {
   const rel = related.filter((x) => (x.country_code !== "BR") === intl).slice(0, 10);
   const de = S.params.get("de"), ate = S.params.get("ate");
   S.current = { dest: d, de, ate, images, caps, flight, hotelNight, tourAvg, days: 7 };
+  S.ambient = photo(d, 500);
   const f = d.facts || {};
   const plugs = plugInfo(f);
   const rules = entryRules(d.country_code);

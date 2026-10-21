@@ -88,6 +88,7 @@ export async function viewRoute(id) {
   const nextCheck = route.last_checked_at ? new Date(new Date(route.last_checked_at).getTime() + route.check_every_hours * 3600000) : null;
   const requested = route.check_requested_at && (!route.last_checked_at || route.check_requested_at > route.last_checked_at);
   const destName = dest?.name || place(route, "destination");
+  S.ambient = photo(dest, 500);
   const guideHref = `#/guide/${esc(route.destination)}?de=${from}&ate=${to}&adultos=${route.adults}`;
   const [sIn, sOut] = top?.depart_date && top?.return_date && daysBetween(top.depart_date, top.return_date) <= 30 ? [top.depart_date, top.return_date] : stayRange(route);
   const stayHref = `#/hospedagem?d=${esc(route.destination)}&nome=${encodeURIComponent(destName)}&de=${sIn}&ate=${sOut}&adultos=${route.adults}`;

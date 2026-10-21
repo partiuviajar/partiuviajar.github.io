@@ -1,5 +1,5 @@
 // Radar de Voos: roteador e casca do app (cabeçalho, menu, status do robô).
-import { sb, S, q, esc, friendlyError, fmtDateTime, invalidate, loadFavs, toggleFav, heartIcon } from "./js/core.js";
+import { sb, S, q, esc, friendlyError, fmtDateTime, invalidate, loadFavs, toggleFav, heartIcon, setAmbient } from "./js/core.js";
 import { icon } from "./js/icons.js";
 import { viewHome } from "./js/views/home.js";
 import { viewRoutes, viewRoute, viewForm, viewExplore } from "./js/views/routes.js";
@@ -66,6 +66,7 @@ async function render() {
   if (logged && hash === "#/login") { location.replace("#/"); return; }
   shell(hash, logged);
   const seq = ++S.seq;
+  S.ambient = null;  // a tela define a foto de fundo, se tiver
   const match = ROUTES.find(([re]) => re.test(hash));
   if (!match) { location.replace("#/"); return; }
   const args = hash.match(match[0]).slice(1);
@@ -77,6 +78,7 @@ async function render() {
     if (seq !== S.seq) return;
     if (typeof html === "string") $view.innerHTML = html;
     window.scrollTo(0, 0);
+    setAmbient(S.ambient);
     await match[1].after?.(...args);
   } catch (e) {
     clearTimeout(slow);

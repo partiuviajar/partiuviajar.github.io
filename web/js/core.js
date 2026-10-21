@@ -160,5 +160,15 @@ export async function toggleFav(btn) {
   } catch (err) { paint(!on); toast(friendlyError(err)); }
 }
 
+// foto da viagem desfocada no fundo da tela (cada tela escolhe a sua; sem foto, só o degradê)
+export function setAmbient(url) {
+  const el = document.getElementById("ambient");
+  if (!el) return;
+  if (!url) { el.classList.remove("on"); return; }
+  const img = new Image();
+  img.onload = () => { el.style.backgroundImage = `url("${url}")`; el.classList.add("on"); };
+  img.src = url;
+}
+
 // nome de quem usa (Ajustes → "Como quer ser chamado")
 export const userName = () => S.session?.user?.user_metadata?.name || "viajante";

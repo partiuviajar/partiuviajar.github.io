@@ -520,3 +520,166 @@ details > summary::-webkit-details-marker { display: none; }
 .cop-month span { font-size: 11px; color: var(--muted-foreground); }
 .cop-month.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .btn:disabled { opacity: 1; background: var(--muted) !important; color: var(--muted-foreground) !important; box-shadow: none !important; cursor: progress; }
+
+/* =========================================================================
+   LIQUID GLASS — identidade visual (vidro translúcido sobre fundo vivo)
+   Desfoque real (backdrop-filter) só em menu, topo e etiquetas sobre fotos:
+   nos cartões o vidro é imitado com transparência + reflexo (não pesa no celular).
+   ========================================================================= */
+:root {
+  --glass-a: rgba(255, 255, 255, .80);
+  --glass-b: rgba(255, 255, 255, .52);
+  --glass-border: rgba(255, 255, 255, .75);
+  --glass-hi: inset 0 1px 0 rgba(255, 255, 255, .95), inset 0 -1px 0 rgba(255, 255, 255, .25);
+  --shadow-card: 0 14px 34px -16px rgba(44, 62, 140, .30), 0 2px 8px rgba(44, 62, 140, .06);
+  --shadow-sm: 0 4px 14px -6px rgba(44, 62, 140, .25);
+  --card: rgba(255, 255, 255, .72);
+  --muted: rgba(255, 255, 255, .55);
+  --secondary: rgba(255, 255, 255, .6);
+  --input: rgba(120, 140, 190, .25);
+  --mesh-1: rgba(110, 132, 255, .42);
+  --mesh-2: rgba(255, 160, 205, .30);
+  --mesh-3: rgba(100, 220, 205, .32);
+  --mesh-4: rgba(255, 196, 140, .30);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-a: rgba(46, 56, 92, .62);
+    --glass-b: rgba(20, 26, 46, .50);
+    --glass-border: rgba(255, 255, 255, .12);
+    --glass-hi: inset 0 1px 0 rgba(255, 255, 255, .10), inset 0 -1px 0 rgba(255, 255, 255, .03);
+    --shadow-card: 0 18px 40px -18px rgba(0, 0, 0, .6);
+    --shadow-sm: 0 6px 16px -8px rgba(0, 0, 0, .6);
+    --card: rgba(36, 44, 74, .72);
+    --muted: rgba(255, 255, 255, .07);
+    --secondary: rgba(255, 255, 255, .09);
+    --input: rgba(255, 255, 255, .12);
+    --mesh-1: rgba(80, 100, 255, .30);
+    --mesh-2: rgba(200, 90, 170, .20);
+    --mesh-3: rgba(40, 170, 160, .20);
+    --mesh-4: rgba(255, 150, 80, .14);
+  }
+}
+
+/* fundo vivo + foto da viagem desfocada (#ambient, trocada por tela) */
+html { background: var(--background); }
+body { background: transparent; }
+body::before {
+  content: ""; position: fixed; inset: -15%; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(38% 32% at 12% 8%, var(--mesh-1), transparent 70%),
+    radial-gradient(34% 30% at 88% 18%, var(--mesh-2), transparent 70%),
+    radial-gradient(44% 38% at 72% 88%, var(--mesh-3), transparent 70%),
+    radial-gradient(40% 34% at 8% 78%, var(--mesh-4), transparent 70%);
+}
+#ambient { position: fixed; inset: 0; z-index: -1; pointer-events: none; background: center / cover no-repeat; filter: blur(46px) saturate(1.5); transform: scale(1.25); opacity: 0; transition: opacity .8s ease; }
+#ambient.on { opacity: .42; }
+@media (prefers-color-scheme: dark) { #ambient.on { opacity: .30; } }
+
+/* vidro */
+.card, .fact, .spot, .tour, .hotel, .cop-choice, .cop-month, .round-btn, .fav-btn, .city-chips > *, .origin-chips button, .sec-nav a, .search input, .chip {
+  background: linear-gradient(155deg, var(--glass-a), var(--glass-b));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-hi), var(--shadow-card);
+}
+.round-btn, .fav-btn, .city-chips > *, .origin-chips button, .sec-nav a { box-shadow: var(--glass-hi), var(--shadow-sm); }
+.card { border-radius: var(--r-2xl); }
+.city-chips > .on, .origin-chips button.on { background: linear-gradient(180deg, #6a86ff, var(--primary)); color: #fff; border-color: rgba(255, 255, 255, .35); }
+.fav-btn.on { background: linear-gradient(155deg, rgba(255, 235, 238, .95), rgba(255, 210, 218, .7)); }
+
+/* topo e menu: vidro de verdade */
+.glass { background: color-mix(in oklab, var(--background) 45%, transparent); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
+.topbar { border-bottom: 1px solid var(--glass-border); }
+.tabs {
+  left: 0; right: 0; margin: 0 auto; bottom: calc(10px + var(--bottom)); width: calc(100% - 24px); max-width: 560px;
+  border-radius: 30px; border: 1px solid var(--glass-border); padding-bottom: 0;
+  box-shadow: var(--glass-hi), 0 18px 40px -14px rgba(30, 40, 90, .35);
+}
+.tabs-in { padding: 4px; }
+.tab { padding: 6px 0 7px; gap: 2px; }
+.tab-ic { width: 52px; height: 32px; }
+.tab.active .tab-ic { background: linear-gradient(155deg, rgba(255, 255, 255, .95), rgba(255, 255, 255, .55)); box-shadow: var(--glass-hi), 0 4px 12px -4px rgba(53, 87, 245, .35); }
+@media (prefers-color-scheme: dark) { .tab.active .tab-ic { background: rgba(255, 255, 255, .14); } }
+.tab-copilot .tab-ic { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 8px 18px -6px rgba(53, 87, 245, .6); }
+.page { padding-bottom: calc(140px + var(--bottom)); }
+.fab { bottom: calc(100px + var(--bottom)); }
+
+/* botões com brilho */
+.btn { border: 1px solid var(--glass-border); box-shadow: var(--glass-hi), var(--shadow-sm); background: linear-gradient(155deg, var(--glass-a), var(--glass-b)); }
+.btn.primary, .action.primary { background: linear-gradient(180deg, #6a86ff, var(--primary)); color: #fff; border-color: rgba(255, 255, 255, .35); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 10px 22px -10px rgba(53, 87, 245, .7); }
+.bg-brand { background: linear-gradient(135deg, #6a86ff 0%, var(--primary) 45%, #1f9bff 100%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), var(--shadow-float); }
+.btn.danger, .action.danger { background: linear-gradient(155deg, rgba(255, 228, 230, .9), rgba(255, 210, 214, .6)); }
+.action { border: 1px solid var(--glass-border); background: linear-gradient(155deg, var(--glass-a), var(--glass-b)); box-shadow: var(--glass-hi), var(--shadow-sm); }
+.btn-lime, .pill.lime, .price-chip { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), 0 8px 18px -8px rgba(120, 180, 0, .55); }
+
+/* segmentado, campos e etiquetas */
+.seg { background: rgba(255, 255, 255, .35); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 3px rgba(40, 60, 120, .08); }
+@media (prefers-color-scheme: dark) { .seg { background: rgba(255, 255, 255, .06); } }
+.seg > .on { background: linear-gradient(155deg, rgba(255, 255, 255, .98), rgba(255, 255, 255, .7)); box-shadow: var(--glass-hi), 0 4px 12px -4px rgba(40, 60, 120, .25); }
+@media (prefers-color-scheme: dark) { .seg > .on { background: rgba(255, 255, 255, .16); } }
+.input, .conv-amount { background: rgba(255, 255, 255, .55); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 2px rgba(40, 60, 120, .08); }
+@media (prefers-color-scheme: dark) { .input, .conv-amount { background: rgba(255, 255, 255, .06); } }
+.infobox, .soft-box, .check-row, .offer { background: rgba(255, 255, 255, .45); border: 1px solid var(--glass-border); }
+@media (prefers-color-scheme: dark) { .infobox, .soft-box, .check-row, .offer { background: rgba(255, 255, 255, .05); } }
+.offer.best, .best-box { background: linear-gradient(155deg, rgba(220, 247, 228, .95), rgba(200, 240, 214, .6)); }
+@media (prefers-color-scheme: dark) { .offer.best, .best-box { background: rgba(60, 207, 142, .14); } }
+
+/* sobre fotos: etiquetas e botões de vidro desfocado */
+.photo-badge, .pill.plain, .gallery-back, .gallery-count, .hotel-photo .fav-btn, .tour .fav-btn, .rhero .fav-btn {
+  background: rgba(255, 255, 255, .28) !important; color: #fff !important; border: 1px solid rgba(255, 255, 255, .45);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6); text-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+}
+.fav-btn.on.over, .hotel-photo .fav-btn.on, .tour .fav-btn.on, .rhero .fav-btn.on { color: #ff4d6d !important; }
+.hero, .photo-tile, .rhero, .route-photo, .related, .gallery-grid, .cop-hero { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22), 0 18px 40px -18px rgba(20, 30, 80, .45); }
+.hero, .photo-tile, .rhero, .related, .gallery-grid, .cop-hero { border-radius: 30px; }
+.bg-fade { background: linear-gradient(180deg, rgba(10, 16, 40, 0) 25%, rgba(10, 16, 40, .78)); }
+
+/* ---------- celular ---------- */
+@media (max-width: 420px) {
+  .page { padding-left: 14px; padding-right: 14px; }
+  .topbar-in { gap: 8px; padding: 10px 14px; }
+  .top-actions { gap: 6px; }
+  .round-btn { width: 36px; height: 36px; }
+  .brand-name { font-size: 16px; }
+  .brand-logo { width: 32px; height: 32px; }
+  .page-title h1 { font-size: 27px; line-height: 32px; }
+  .price-xl { font-size: 26px; line-height: 32px; }
+  .price-2xl { font-size: 32px; line-height: 36px; }
+  .hero { height: 248px; }
+  .hero-hello p:first-child { font-size: 26px; }
+  .hero-hello p:last-child { font-size: 40px; }
+  .price-chip { font-size: 20px; padding: 6px 12px; }
+  .grid4 { gap: 8px; }
+  .quick { padding: 10px 4px; }
+  .quick-ic { width: 40px; height: 40px; }
+  .quick span:last-child { font-size: 11px; }
+  .cop-money { font-size: 32px; }
+  .cop-money input { width: 180px; }
+  .cop-choice { min-height: 92px; }
+  .deal-photo { width: 84px; }
+  .rhero h1, .gallery + .page h1 { font-size: 26px !important; line-height: 30px !important; }
+  .tab span:last-child { font-size: 9.5px; }
+  .tab-ic { width: 46px; }
+}
+@media (max-width: 360px) {
+  .brand-name { display: none; }
+  .bot-pill { display: none !important; }
+  .cop-months { grid-template-columns: repeat(3, 1fr); }
+}
+/* toques maiores e sem vazamento lateral */
+html, body { overflow-x: hidden; }
+.btn.sm { min-height: 34px; }
+.pressable:active { transform: scale(.96); }
+/* ajustes do vidro no celular */
+.tab.tab-copilot .tab-ic, .tab.tab-copilot.active .tab-ic { background: linear-gradient(135deg, #6a86ff, var(--primary) 50%, #1f9bff) !important; color: #fff !important; }
+.tab.tab-copilot.active { color: var(--primary); }
+.btn { white-space: nowrap; }
+.cop-act { flex-direction: column; gap: 4px; border-radius: var(--r-xl) !important; padding: 10px 4px !important; white-space: normal; text-align: center; line-height: 1.15; font-size: 12px; min-height: 64px; }
+.cost-row .row > span { min-width: 0; }
+.cost-row .row > b { white-space: nowrap; flex: none; }
+#days-pick .display { white-space: nowrap; }
+@media (max-width: 420px) {
+  #days-pick button { padding: 12px !important; border-radius: var(--r-2xl) !important; }
+  #days-pick .display { font-size: 16px !important; }
+  .btn.big { font-size: 15px !important; padding: 14px 10px; }
+}

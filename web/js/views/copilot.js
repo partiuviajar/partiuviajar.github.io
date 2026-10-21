@@ -311,9 +311,9 @@ function optionCard(o, i, a, people, dest) {
         ${(o.itinerary || []).map((d) => `<div class="cop-day"><span class="pill primary">${esc(d.day)}</span><div><p class="sb">${esc(d.title)}</p><p class="sm muted">${esc(d.text)}</p></div></div>`).join("")}</details>
       ${(o.tips || []).length ? `<div class="tip" style="display:block"><p class="b">💡 Dicas do Copiloto</p><ul class="sm" style="margin-top:6px">${o.tips.map((t) => `<li style="margin-top:4px">• ${esc(t)}</li>`).join("")}</ul></div>` : ""}
       <div class="grid3" style="gap:8px">
-        <a class="btn primary sm pressable" style="flex-direction:column;padding:10px 6px" href="#/nova?${p}">${icon("plane", 18)} Vigiar passagem</a>
-        <a class="btn sm pressable" style="flex-direction:column;padding:10px 6px" href="#/guide/${esc(o.code)}?nome=${encodeURIComponent(o.city)}&de=${o.depart}&ate=${o.return}">${icon("earth", 18)} Ver guia</a>
-        <a class="btn sm pressable" style="flex-direction:column;padding:10px 6px" href="#/hospedagem?${stay}">${icon("bed-double", 18)} Ver hotéis</a>
+        <a class="btn primary sm pressable cop-act" href="#/nova?${p}">${icon("plane", 18)} Vigiar passagem</a>
+        <a class="btn sm pressable cop-act" href="#/guide/${esc(o.code)}?nome=${encodeURIComponent(o.city)}&de=${o.depart}&ate=${o.return}">${icon("earth", 18)} Ver guia</a>
+        <a class="btn sm pressable cop-act" href="#/hospedagem?${stay}">${icon("bed-double", 18)} Ver hotéis</a>
       </div>
     </div>
   </article>`;
