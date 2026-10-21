@@ -354,7 +354,7 @@ def run(db: DB, req_id: str):
         text = f"✨ *Copiloto: suas viagens sob medida estão prontas!*\n{names}, cabendo no seu orçamento."
         if url:
             text += f"\n👉 Ver: {url}"
-        notify.broadcast(db, settings, "✨ Copiloto: viagens prontas", text, url)
+        notify.broadcast(db, settings, "✨ Copiloto: viagens prontas", text, url, req.get("user_id"))
     except Exception as e:
         traceback.print_exc()
         upd(status="error", error=str(e)[:300], stage=None)

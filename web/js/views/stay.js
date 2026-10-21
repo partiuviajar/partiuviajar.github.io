@@ -1,5 +1,5 @@
 // Hospedagem: busca de hotéis/hostels (o robô compara os sites no Google Hotels) e o resultado.
-import { sb, S, q, favBtn, esc, brl, ago, fmtShort, fmtDay, todayIso, addDays, daysBetween, toast, friendlyError, place, photo, bg, loadDestinations } from "../core.js";
+import { sb, S, q, favBtn, etaBox, esc, brl, ago, fmtShort, fmtDay, todayIso, addDays, daysBetween, toast, friendlyError, place, photo, bg, loadDestinations } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, seg, bindSeg, secTitle, stayRange, autocomplete, back } from "../ui.js";
 
@@ -169,14 +169,14 @@ function hotelsBody(row) {
   const waiting = !["done", "error"].includes(row.status);
   if (row.status === "error") return `<div class="hint bad">A busca falhou: ${esc(row.error || "erro desconhecido")}. Tente de novo em alguns minutos.</div>`;
   if (!hotels.length) {
-    return waiting ? `<div class="card pad"><p class="sm sb">🔎 Procurando hotéis e comparando os sites…</p><p class="xs muted" style="margin-top:4px">Leva cerca de 1 minuto. Pode deixar esta tela aberta.</p><div class="progress"><i style="width:8%"></i></div></div>`
+    return waiting ? `<div class="card pad stack"><p class="sm sb">🔎 Procurando hotéis e comparando os sites…</p>${etaBox(row.created_at, 90)}<p class="xs muted">Pode deixar esta tela aberta: ela atualiza sozinha.</p></div>`
       : `<div class="card pad center sm muted">Nenhum hotel encontrado para essas datas.</div>`;
   }
   const minNight = (h) => Math.min(...(h.offers || []).map((o) => o.night ?? Infinity), h.night ?? Infinity);
   if (sort === "price") hotels.sort((a, b) => minNight(a) - minNight(b));
   if (sort === "rating") hotels.sort((a, b) => (b.rating || 0) - (a.rating || 0));
   const ready = hotels.filter((h) => h.offers != null).length;
-  return `${waiting ? `<div class="card pad"><p class="sm sb">Comparando os sites… ${ready} de ${hotels.length} hotéis prontos</p><div class="progress"><i style="width:${Math.max(8, (ready / hotels.length) * 100)}%"></i></div></div>` : ""}
+  return `${waiting ? `<div class="card pad stack"><p class="sm sb">Comparando os sites… ${ready} de ${hotels.length} hotéis prontos</p>${etaBox(row.created_at, 90)}</div>` : ""}
     ${hotels.map((h, i) => hotelCard(h, i, daysBetween(row.checkin, row.checkout))).join("")}
     <p class="xs muted">Preços do Google Hotels em reais, com taxas quando o site informa. Confira o valor final no site antes de reservar.</p>`;
 }

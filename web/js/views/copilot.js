@@ -1,6 +1,6 @@
 // Copiloto ✨: apresentação, questionário passo a passo e as 2 viagens sugeridas.
 // O robô busca preços reais (passagens, hotéis, clima) e a IA (Gemini) escolhe e escreve.
-import { sb, S, q, esc, brl, ago, fmtShort, todayIso, addDays, daysBetween, toast, friendlyError, flag, photo, bg, loadDestinations, favBtn } from "../core.js";
+import { sb, S, q, etaBox, esc, brl, ago, fmtShort, todayIso, addDays, daysBetween, toast, friendlyError, flag, photo, bg, loadDestinations, favBtn } from "../core.js";
 import { icon } from "../icons.js";
 import { pill, back } from "../ui.js";
 
@@ -270,7 +270,8 @@ async function resultBody(r) {
   if (r.status !== "done") {
     return `<section class="card prep"><div class="spin"></div><h2 class="lg xb">O Copiloto está montando suas viagens…</h2>
       <p class="sm sb primary-t" style="margin-top:8px">${esc(r.stage || "Começando…")}</p>
-      <p class="sm muted" style="margin-top:8px">Leva alguns minutos. Pode sair desta tela: avisamos por notificação quando ficar pronto.</p></section>`;
+      <div style="margin-top:14px;text-align:left">${etaBox(r.created_at, 150)}</div>
+      <p class="sm muted" style="margin-top:8px">Pode sair desta tela: avisamos por notificação quando ficar pronto.</p></section>`;
   }
   const res = r.result || {};
   if (res.empty || !(res.options || []).length) {

@@ -225,7 +225,7 @@ def check_route(db: DB, route: dict, settings: dict, now: datetime) -> tuple[str
     if candidates:
         items = sorted(candidates, key=lambda c: c["price"])[:MAX_DATES_PER_ALERT]
         alert_title, messages = notify.alert_messages(route, items)
-        used = notify.broadcast(db, settings, alert_title, messages, notify.app_url(f"#/rota/{rid}"))
+        used = notify.broadcast(db, settings, alert_title, messages, notify.app_url(f"#/rota/{rid}"), route.get("user_id"))
         db.insert("alerts", [{
             "route_id": rid, "channels": used,
             **{k: v for k, v in it.items() if k not in ("stops", "google_link", "aviasales_link")},
@@ -547,7 +547,7 @@ def check_long_route(db: DB, route: dict, settings: dict, now: datetime) -> tupl
         order = {"combo": 0, "rt": 1, "out": 2, "back": 3}
         items = sorted(candidates, key=lambda c: (order[c["leg"]], c["price"]))[:MAX_LONG_ALERT_ITEMS]
         alert_title, messages = notify.alert_messages(route, items)
-        used = notify.broadcast(db, settings, alert_title, messages, notify.app_url(f"#/rota/{rid}"))
+        used = notify.broadcast(db, settings, alert_title, messages, notify.app_url(f"#/rota/{rid}"), route.get("user_id"))
         db.insert("alerts", [{
             "route_id": rid, "channels": used,
             **{k: v for k, v in it.items() if k not in ("stops", "google_link", "google_link_back", "aviasales_link")},
@@ -565,6 +565,33 @@ def check_long_route(db: DB, route: dict, settings: dict, now: datetime) -> tupl
     if errors:
         line += " | avisos: " + "; ".join(errors)
     return line, bool(errors)
+
+
+PLAN_NAMES = {"basic": "Viajante Iniciante", "silver": "Viajante Apaixonado", "gold": "Mochileiro Pro"}
+
+
+def notify_admin(db: DB, settings: dict) -> list[str]:
+    """Avisa o administrador (WhatsApp + app) de cadastros esperando aprovação e pedidos de upgrade."""
+    notes = []
+    try:
+        pending = db.select("profiles", {"select": "id,email,name", "status": "eq.pending", "notified_at": "is.null"})
+        ups = db.select("upgrade_requests", {"select": "id,email,name,to_plan,message", "status": "eq.pending", "notified_at": "is.null"})
+    except Exception as e:  # tabelas ainda não criadas
+        return [f"[admin] {str(e)[:80]}"]
+    now = datetime.now(timezone.utc).isoformat()
+    url = notify.app_url("#/admin")
+    if pending:
+        who = ", ".join((p.get("name") or p["email"]) for p in pending[:5])
+        text = f"👤 *{len(pending)} cadastro(s) esperando sua aprovação*\n{who}" + (f"\n👉 Aprovar: {url}" if url else "")
+        notify.broadcast(db, settings, "👤 Novo cadastro para aprovar", text, url)
+        db.update("profiles", {"id": f"in.({','.join(p['id'] for p in pending)})"}, {"notified_at": now})
+        notes.append(f"admin avisado: {len(pending)} cadastro(s)")
+    for u in ups:
+        text = f"⬆️ *{u.get('name') or u['email']} quer o plano {PLAN_NAMES.get(u['to_plan'], u['to_plan'])}*" + (f"\n💬 {u['message']}" if u.get("message") else "") + (f"\n👉 Liberar: {url}" if url else "")
+        notify.broadcast(db, settings, "⬆️ Pedido de upgrade", text, url)
+        db.update("upgrade_requests", {"id": f"eq.{u['id']}"}, {"notified_at": now})
+        notes.append(f"admin avisado: upgrade de {u['email']}")
+    return notes
 
 
 def prune(db: DB, now: datetime):
@@ -591,6 +618,8 @@ def main():
     routes = db.select("routes", {"active": "eq.true", "order": "created_at.asc"})
     due = routes if "--force" in sys.argv else [r for r in routes if is_due(r, now)]
 
+    for note in notify_admin(db, settings):
+        print(note)
     if not wants_test and not due:
         print(f"Nada a fazer agora ({len(routes)} rota(s) ativa(s)).")
         for note in explore.run(db, routes, settings, now, started + EXPLORE_TIME_BUDGET_S):

@@ -683,3 +683,6 @@ html, body { overflow-x: hidden; }
   #days-pick .display { font-size: 16px !important; }
   .btn.big { font-size: 15px !important; padding: 14px 10px; }
 }
+.eta { text-align: left; }
+.eta .progress { margin-top: 6px; height: 10px; }
+.eta .progress i { transition: width 1s linear; }

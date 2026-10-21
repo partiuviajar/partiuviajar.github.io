@@ -54,7 +54,7 @@ def run(db: DB, req_id: str):
         text = f"🧭 *Seu guia de {name} está pronto!*\nFotos, clima, pontos turísticos, passeios com preço e quanto custa a viagem."
         if url:
             text += f"\n📖 Abrir: {url}"
-        used = notify.broadcast(db, settings, f"🧭 Guia de {name} pronto", text, url)
+        used = notify.broadcast(db, settings, f"🧭 Guia de {name} pronto", text, url, req.get("user_id"))
         print(f"guia de {name} pronto; aviso por {', '.join(used) or 'nenhum canal'}")
     except Exception as e:
         traceback.print_exc()

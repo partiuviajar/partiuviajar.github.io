@@ -154,13 +154,29 @@ def send_telegram(text: str) -> bool:
         return False
 
 
-def send_push(db, title: str, body: str, url: str) -> bool:
+_ADMINS: set | None = None
+
+
+def is_admin(db, user_id) -> bool:
+    """Administrador recebe também WhatsApp/Telegram (configurados no robô); os demais, por enquanto, só a notificação do app."""
+    global _ADMINS
+    if user_id is None:
+        return True
+    if _ADMINS is None:
+        try:
+            _ADMINS = {p["id"] for p in db.select("profiles", {"select": "id", "role": "eq.admin"})}
+        except Exception:
+            _ADMINS = set()
+    return user_id in _ADMINS
+
+
+def send_push(db, title: str, body: str, url: str, user_id=None) -> bool:
     private_key = os.environ.get("VAPID_PRIVATE_KEY")
     if not private_key:
         return False
     from pywebpush import WebPushException, webpush
 
-    subs = db.select("push_subscriptions")
+    subs = db.select("push_subscriptions", {"user_id": f"eq.{user_id}"} if user_id else None)
     payload = json.dumps({"title": title, "body": body[:240], "url": url or "./"})
     sent = False
     for s in subs:
@@ -194,17 +210,21 @@ def send_all(send, messages: list[str]) -> bool:
     return ok
 
 
-def broadcast(db, settings: dict, title: str, text: str | list[str], url: str = "") -> list[str]:
-    """Envia para todos os canais ligados (uma ou várias mensagens). Devolve os canais que funcionaram."""
+def broadcast(db, settings: dict, title: str, text: str | list[str], url: str = "", user_id=None) -> list[str]:
+    """Envia para a pessoa (user_id; None = administrador). Devolve os canais que funcionaram.
+
+    WhatsApp/Telegram do robô são do administrador; os outros recebem a notificação do app.
+    """
     messages = [text] if isinstance(text, str) else text
     used = []
-    if settings.get("notify_whatsapp", True) and send_all(send_whatsapp, messages):
+    admin = is_admin(db, user_id)
+    if admin and settings.get("notify_whatsapp", True) and send_all(send_whatsapp, messages):
         used.append("whatsapp")
-    if settings.get("notify_telegram", True) and send_all(send_telegram, messages):
+    if admin and settings.get("notify_telegram", True) and send_all(send_telegram, messages):
         used.append("telegram")
     if settings.get("notify_push", True):
         # notificação do app: uma só, com a primeira passagem
         body = messages[0].replace("*", "").split("\n", 1)[-1]
-        if send_push(db, title, body, url):
+        if send_push(db, title, body, url, user_id):
             used.append("push")
     return used

@@ -160,6 +160,24 @@ export async function toggleFav(btn) {
   } catch (err) { paint(!on); toast(friendlyError(err)); }
 }
 
+// tempo estimado de uma tarefa do robô: etaBox(início, segundos previstos)
+export function etaBox(startIso, estSec, label = "") {
+  const t = new Date(startIso).getTime();
+  return `<div class="eta" data-start="${Number.isFinite(t) ? t : Date.now()}" data-est="${estSec}">
+    <div class="row between xs"><span class="sb">${label || "Tempo estimado"}: <span data-eta-total>${fmtDur(estSec)}</span></span><span class="muted" data-eta-left></span></div>
+    <div class="progress"><i data-eta-bar style="width:3%"></i></div><p class="tiny muted" data-eta-note style="margin-top:4px"></p></div>`;
+}
+const fmtDur = (s) => { if (s < 60) return `${s} s`; const m = Math.floor(s / 60), half = s % 60 >= 30; return `cerca de ${m} min${half ? " e meio" : ""}`; };
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+setInterval(() => {
+  document.querySelectorAll(".eta").forEach((el) => {
+    const elapsed = (Date.now() - Number(el.dataset.start)) / 1000, est = Number(el.dataset.est);
+    el.querySelector("[data-eta-bar]").style.width = `${Math.min(96, Math.max(3, (elapsed / est) * 100))}%`;
+    el.querySelector("[data-eta-left]").textContent = elapsed < est ? `faltam ~${mmss(est - elapsed)}` : `passaram ${mmss(elapsed)}`;
+    el.querySelector("[data-eta-note]").textContent = elapsed > est * 1.3 ? "Está demorando mais que o normal (fila do robô), mas continua buscando." : `já passaram ${mmss(elapsed)}`;
+  });
+}, 1000);
+
 // foto da viagem desfocada no fundo da tela (cada tela escolhe a sua; sem foto, só o degradê)
 export function setAmbient(url) {
   const el = document.getElementById("ambient");
