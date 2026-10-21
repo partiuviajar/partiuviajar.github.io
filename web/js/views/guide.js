@@ -65,7 +65,7 @@ viewGuideIndex.after = async () => {
     document.querySelectorAll("#city-chips button").forEach((b) => b.classList.toggle("on", b.dataset.c === gstate.focus));
     const d = gstate.list.find((x) => x.code === gstate.focus);
     document.getElementById("globe-card").innerHTML = d ? `<a class="card globe-card fade-up" href="#/guide/${esc(d.code)}">
-      <span class="thumb" style="width:48px;height:48px" ${bg(photo(d, 330))}></span>
+      <span class="thumb" style="width:48px;height:48px;${photo(d, 330) ? `background-image:url('${esc(photo(d, 330))}')` : ""}"></span>
       <span class="grow"><p class="b truncate">${flag(d.country_code)} ${esc(d.name)}</p><p class="xs muted truncate">${esc(firstSentence(d.summary || d.country_name || "", 60))}</p></span>
       <span class="go">${icon("arrow-right", 16)}</span></a>` : "";
     globe?.focus(d ? [d.lat, d.lon] : null);
