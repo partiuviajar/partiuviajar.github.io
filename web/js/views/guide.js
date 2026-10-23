@@ -157,7 +157,7 @@ export async function viewGuide(code) {
     q(sb.from("destinations").select("*").eq("code", code).maybeSingle()),
     q(sb.from("guide_requests").select("*").eq("code", code).order("created_at", { ascending: false }).limit(1)).then((r) => r[0]).catch(() => null),
   ]);
-  const preparing = req && ["pending", "running"].includes(req.status) && Date.now() - new Date(req.created_at) < 15 * 60000;
+  const preparing = req && ["pending", "queued", "running"].includes(req.status) && Date.now() - new Date(req.created_at) < 15 * 60000;
   if (!d?.lat) {
     S.current = { request: { code, name: S.params.get("nome") || req?.name || d?.name || code, preparing } };
     return `<main class="page"><a class="back" href="#/guide">${icon("arrow-left", 16)} Guide</a>
@@ -385,7 +385,7 @@ function bindRequest(r) {
     if (location.hash !== myHash) return clearInterval(timer);
     try {
       const req = (await q(sb.from("guide_requests").select("status").eq("code", r.code).order("created_at", { ascending: false }).limit(1)))[0];
-      if (req && req.status !== "pending" && req.status !== "running") {
+      if (req && !["pending", "queued", "running"].includes(req.status)) {
         clearInterval(timer);
         invalidate("guide:");
         if (req.status === "done") toast("🧭 Guia pronto!");

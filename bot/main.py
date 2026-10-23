@@ -16,6 +16,8 @@ from datetime import date, datetime, timedelta, timezone
 from itertools import zip_longest
 from zoneinfo import ZoneInfo
 
+import requests
+
 import analysis
 import explore
 import notify
@@ -567,6 +569,37 @@ def check_long_route(db: DB, route: dict, settings: dict, now: datetime) -> tupl
     return line, bool(errors)
 
 
+# pedidos do app que dependem do gatilho do Supabase; se o gatilho falhar, o robô aciona ele mesmo
+STUCK_JOBS = [("copilot_requests", "copiloto.yml", "request"), ("hotel_searches", "hoteis.yml", "search"), ("guide_requests", "guia.yml", "request")]
+
+
+def kick_stuck_jobs(db: DB) -> list[str]:
+    """Aciona os trabalhos de pedidos parados há mais de 3 min (Copiloto, hotéis, guias)."""
+    token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY")
+    if not token or not repo:
+        return []
+    now = datetime.now(timezone.utc)
+    notes = []
+    for table, workflow, field in STUCK_JOBS:
+        try:
+            rows = db.select(table, {"select": "id", "status": "eq.pending",
+                                     "created_at": f"lt.{(now - timedelta(minutes=3)).isoformat()}",
+                                     "and": f"(created_at.gt.{(now - timedelta(days=3)).isoformat()})"})
+        except Exception as e:
+            notes.append(f"[fila] {table}: {str(e)[:80]}")
+            continue
+        for r in rows[:10]:
+            resp = requests.post(f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches",
+                                 headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+                                 json={"ref": "main", "inputs": {field: str(r["id"])}}, timeout=20)
+            if resp.status_code == 204:
+                db.update(table, {"id": f"eq.{r['id']}"}, {"status": "queued"})
+                notes.append(f"[fila] {table} {r['id']}: acionado")
+            else:
+                notes.append(f"[fila] {table} {r['id']}: GitHub respondeu {resp.status_code}")
+    return notes
+
+
 PLAN_NAMES = {"basic": "Viajante Iniciante", "silver": "Viajante Apaixonado", "gold": "Mochileiro Pro"}
 
 
@@ -618,7 +651,7 @@ def main():
     routes = db.select("routes", {"active": "eq.true", "order": "created_at.asc"})
     due = routes if "--force" in sys.argv else [r for r in routes if is_due(r, now)]
 
-    for note in notify_admin(db, settings):
+    for note in notify_admin(db, settings) + kick_stuck_jobs(db):
         print(note)
     if not wants_test and not due:
         print(f"Nada a fazer agora ({len(routes)} rota(s) ativa(s)).")
