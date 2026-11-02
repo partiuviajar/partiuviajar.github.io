@@ -17,7 +17,13 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+      # erros viram anotações (o log da execução não abre em todo lugar)
       - name: Chave do Gemini
-        run: supabase secrets set --project-ref "$PROJECT" GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          supabase secrets set --project-ref "$PROJECT" GEMINI_API_KEY="$GEMINI_API_KEY" > out.txt 2>&1 || { echo "::error title=secrets::$(tail -c 600 out.txt | tr '\n' ' ')"; exit 1; }
       - name: Guia Local
-        run: supabase functions deploy guia-local --project-ref "$PROJECT" --no-verify-jwt --use-api
+        run: |
+          supabase functions deploy guia-local --project-ref "$PROJECT" --no-verify-jwt --use-api > out.txt 2>&1 || { echo "::error title=deploy::$(tail -c 900 out.txt | tr '\n' ' ')"; exit 1; }
+          echo "::notice title=deploy::$(tail -c 300 out.txt | tr '\n' ' ')"
