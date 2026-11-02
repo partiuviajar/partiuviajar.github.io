@@ -143,6 +143,7 @@ async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, time
   const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature } });
   let last: unknown;
   for (const model of models) {
+    const t0 = Date.now();
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(timeout),
@@ -150,10 +151,11 @@ async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, time
       const d = await r.json();
       if (!d.candidates) throw new Error(String(d.error?.message || JSON.stringify(d)).slice(0, 160));
       const out = JSON.parse(d.candidates[0].content.parts[0].text);
+      warn(`[gemini] ${model}: ok em ${Date.now() - t0} ms`);
       return { ...out, _model: model };
     } catch (e) {
       last = e;
-      warn(`[gemini] ${model}: ${String(e).slice(0, 160)}`);
+      warn(`[gemini] ${model}: falhou em ${Date.now() - t0} ms: ${String(e).slice(0, 140)}`);
     }
   }
   throw new Error(`A IA está sobrecarregada agora. Tente de novo em alguns instantes. (${String(last).slice(0, 80)})`);
