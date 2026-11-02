@@ -24,7 +24,8 @@ export type Input = {
 
 export type Photo = { url: string; page?: string; credit?: string };
 
-type Page = { lang: string; title: string; extract: string; url: string; image?: string; lat?: number; lon?: number; description?: string };
+type Page = { lang: string; title: string; extract: string; url: string; image?: string; lat?: number; lon?: number; description?: string; other?: string; more?: string };
+const SHORT_EXTRACT = 6000;
 
 async function getJson(url: string, timeout = 15000) {
   const r = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "pt-BR" }, signal: AbortSignal.timeout(timeout) });
@@ -84,7 +85,7 @@ async function page(lang: string, title: string): Promise<Page | null> {
   if (!title) return null;
   try {
     const j = await wiki(lang, {
-      action: "query", titles: title, redirects: "1", prop: "extracts|pageimages|coordinates|info|description",
+      action: "query", titles: title, redirects: "1", prop: "extracts|pageimages|coordinates|info|description|langlinks", lllang: lang === "pt" ? "en" : "pt",
       explaintext: "1", exsectionformat: "plain", piprop: "original|thumbnail", pithumbsize: "1280", inprop: "url",
     });
     const p = j.query?.pages?.[0];
@@ -95,6 +96,7 @@ async function page(lang: string, title: string): Promise<Page | null> {
       lang, title: p.title, url: p.fullurl, description: p.description,
       extract: p.extract.split(/\n\s*(Referências|Ver também|Ligações externas|Bibliografia|References|See also|External links)\s*\n/)[0].slice(0, MAX_EXTRACT),
       image: p.thumbnail?.source || p.original?.source, lat: p.coordinates?.[0]?.lat, lon: p.coordinates?.[0]?.lon,
+      other: p.langlinks?.[0]?.title,
     };
   } catch { return null; }
 }
@@ -211,9 +213,15 @@ export async function identify(inp: Input, geo: Awaited<ReturnType<typeof whereA
 // 2) A história, contada como guia
 // ---------------------------------------------------------------------------
 export async function findPage(id: { name?: string; wiki_pt?: string; wiki_en?: string }, title?: string, lang = "pt") {
-  if (title) return await page(lang, title);
-  return await page("pt", id.wiki_pt || "") || await page("en", id.wiki_en || "")
-    || await (async () => { const s = await search("pt", id.name || ""); return s[0] ? page("pt", s[0].title) : null; })();
+  const src = title ? await page(lang, title)
+    : await page("pt", id.wiki_pt || "") || await page("en", id.wiki_en || "")
+      || await (async () => { const s = await search("pt", id.name || ""); return s[0] ? page("pt", s[0].title) : null; })();
+  // artigo curto: completa com o mesmo artigo no outro idioma (o de inglês costuma ter mais detalhes)
+  if (src && src.extract.length < SHORT_EXTRACT && src.other) {
+    const o = await page(src.lang === "pt" ? "en" : "pt", src.other);
+    if (o) src.more = o.extract.slice(0, MAX_EXTRACT - src.extract.length);
+  }
+  return src;
 }
 
 export async function narrate(inp: Input, src: Page | null, name: string, geo: Awaited<ReturnType<typeof whereAmI>>) {
@@ -221,7 +229,7 @@ export async function narrate(inp: Input, src: Page | null, name: string, geo: A
     `Você é um guia local simpático e apaixonado pela sua cidade, falando com um turista brasileiro que está na frente de "${src?.title || name}"${geo?.label ? ` (a pessoa está em ${geo.label})` : ""}.`,
     "Escreva em português do Brasil, em tom de conversa, como quem está falando ao vivo. Sem markdown, sem emojis, sem listas dentro do texto corrido.",
     src
-      ? `Use SOMENTE os fatos do texto de referência abaixo (Wikipédia, ${src.lang === "pt" ? "em português" : "em inglês: traduza"}) para datas, nomes, números, autores e história. O que não estiver no texto, NÃO afirme. Não invente datas.\n\nTEXTO DE REFERÊNCIA — ${src.title}:\n${src.extract}`
+      ? `Use SOMENTE os fatos do texto de referência abaixo (Wikipédia, ${src.lang === "pt" ? "em português" : "em inglês: traduza"}) para datas, nomes, números, autores e história. O que não estiver no texto, NÃO afirme. Não invente datas.\n\nTEXTO DE REFERÊNCIA — ${src.title}:\n${src.extract}${src.more ? `\n\nMESMO ARTIGO NA WIKIPÉDIA EM ${src.lang === "pt" ? "INGLÊS (traduza)" : "PORTUGUÊS"}:\n${src.more}` : ""}`
       : "ATENÇÃO: não achamos nenhum texto de referência sobre esse lugar. Descreva com cautela apenas o que se vê ou o que é de conhecimento muito geral, sem datas, nomes ou números específicos, e diga claramente que não encontrou registros confiáveis sobre a história dele.",
     `Campos:
 - title: nome do lugar.
