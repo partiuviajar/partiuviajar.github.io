@@ -45,7 +45,8 @@ const TABS = [
   ["#/", "Home", "house", (h) => h === "#/" || h === "#"],
   ["#/rotas", "Rotas", "plane", (h) => /^#\/(rota|nova|editar|explorar)/.test(h)],
   ["#/copiloto", "Copiloto", "sparkles", (h) => h.startsWith("#/copiloto")],
-  ["#/guide", "Guide", "earth", (h) => /^#\/(guide|destino|local|lugar|perto)/.test(h)],
+  ["#/guide", "Guide", "earth", (h) => /^#\/(guide|destino)/.test(h)],
+  ["#/local", "Nativo", "camera", (h) => /^#\/(local|lugar|perto)/.test(h)],
   ["#/hospedagem", "Hospedagem", "bed-double", (h) => /^#\/(hospedagem|hoteis|viagem)/.test(h)],
 ];
 

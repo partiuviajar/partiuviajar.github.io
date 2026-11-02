@@ -55,7 +55,7 @@ export async function viewFavorites() {
 viewFavorites.after = () => {
   const draw = () => {
     const list = favs.rows.filter((r) => r.kind === favTab);
-    const empty = { guide: "Abra um guia no Guide e toque no ❤️ ao lado do nome da cidade.", local: "No Guia Local, toque no ❤️ de um lugar para guardar aqui.", tour: "Nos guias, toque no ❤️ de um passeio para guardar aqui.", hotel: "Na busca de hotéis, toque no ❤️ da foto do hotel para guardar aqui." }[favTab];
+    const empty = { guide: "Abra um guia no Guide e toque no ❤️ ao lado do nome da cidade.", local: "No Nativo, toque no ❤️ de um lugar para guardar aqui.", tour: "Nos guias, toque no ❤️ de um passeio para guardar aqui.", hotel: "Na busca de hotéis, toque no ❤️ da foto do hotel para guardar aqui." }[favTab];
     document.getElementById("fav-list").innerHTML = list.length ? list.map((f, i) => {
       const external = /^https?:/.test(f.link || "");
       return `<div class="card pad-s row fade-up rel" style="gap:12px;margin-top:${i ? 12 : 0}px;animation-delay:${i * 50}ms">

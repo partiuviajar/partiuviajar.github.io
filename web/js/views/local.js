@@ -1,10 +1,10 @@
-// Guia Local 📸: foto (câmera ou galeria) ou nome de um lugar → a história contada como um guia da cidade,
+// Nativo 📸 (guia local): foto (câmera ou galeria) ou nome de um lugar → a história contada como um guia da cidade,
 // com voz. Quem reconhece e escreve é a função guia-local do Supabase (fatos da Wikipédia + Gemini).
 import { sb, S, q, esc, toast, friendlyError, favBtn, bg, ago } from "../core.js";
 import { icon } from "../icons.js";
 import { secTitle } from "../ui.js";
 
-export const LOCAL_NAME = "Guia Local"; // nome provisório
+export const LOCAL_NAME = "Nativo";
 const STEPS = ["📍 Vendo onde você está…", "👀 Reconhecendo o lugar…", "📚 Buscando a história…", "✍️ Preparando a explicação…", "📸 Separando as fotos…"];
 
 // localização do celular (pedida uma vez por visita à tela) e o último pedido, para "Não é esse?"
@@ -123,7 +123,7 @@ export async function viewLocal() {
   const seen = new Set();
   const mine = visits.filter((v) => !seen.has(v.place_key) && seen.add(v.place_key)).slice(0, 8);
   return `<main class="page">
-    <div class="page-title"><h1>📸 ${LOCAL_NAME}</h1><p>Passou por um lugar e ficou curioso? Tire uma foto ou escreva o nome, e eu conto a história como um guia da cidade.</p></div>
+    <div class="page-title"><h1>📸 ${LOCAL_NAME}</h1><p>Seu guia nativo em qualquer cidade. Passou por um lugar e ficou curioso? Tire uma foto ou escreva o nome, e eu conto a história.</p></div>
     <section class="card pad lg-capture">
       <div class="grid2">
         <label class="btn big bg-brand shadow-float pressable lg-shot">${icon("camera", 22)} Tirar foto<input type="file" accept="image/*" capture="environment" class="sr-file" id="lg-cam"></label>

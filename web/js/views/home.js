@@ -161,7 +161,7 @@ function quick() {
   return `<div class="grid4">
     ${limits().routesLeft > 0 ? tile("#/nova", "plus", "Nova rota", true) : `<button type="button" class="quick card pressable" data-upgrade><span class="quick-ic">🔒</span><span>Nova rota</span></button>`}
     ${tile("#/explorar", "compass", "Promoções")}
-    ${tile("#/local", "camera", "Guia Local")}
+    ${tile("#/local", "camera", "Nativo")}
     ${tile("#/hospedagem", "bed-double", "Hospedagem")}
   </div>`;
 }
