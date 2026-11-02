@@ -4,6 +4,8 @@
 const UA = "partiuviajar/1.0 (https://partiuviajar.github.io)";
 // mesmos modelos do robô (bot/ai.py): no plano grátis um deles às vezes responde "alta demanda"
 const MODELS = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+// para escrever a história o modelo leve basta e responde bem mais rápido (reconhecer a foto fica com os maiores)
+const WRITE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"];
 const MAX_EXTRACT = 14000;
 // no teste do GitHub os avisos viram anotações (o log da execução não abre deste Mac)
 export const warn = (msg: string) => console.log(Deno.env.get("GITHUB_ACTIONS") ? `::warning::${msg}` : msg);
@@ -133,12 +135,12 @@ async function highlightPhoto(h: { name: string; photo_query: string }, place: s
 // ---------------------------------------------------------------------------
 // Gemini
 // ---------------------------------------------------------------------------
-async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, timeout = 25000) {
+async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, timeout = 25000, models = MODELS) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("GEMINI_API_KEY não configurada");
   const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature } });
   let last: unknown;
-  for (const model of MODELS) {
+  for (const model of models) {
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(timeout),
@@ -227,12 +229,12 @@ export async function narrate(inp: Input, src: Page | null, name: string, geo: A
 - intro: uma frase de abertura, tipo "Você está diante da …".
 - Em todos os campos escreva datas e números com algarismos (1990, 215 degraus).
 - story: 3 a 5 parágrafos curtos separados por linha em branco (150 a 300 palavras no total): o que é, quem fez e quando, por que é importante, como é hoje.
-- highlights: de 3 a 6 coisas para ver ou reparar ali (partes, obras, salas, estátuas, detalhes), só as que aparecem no texto${inp.image ? " ou estão claramente visíveis na foto" : ""}. Cada uma com name (curto), desc (1 ou 2 frases) e photo_query (termos para achar uma foto daquela parte na Wikimedia Commons: nome do lugar + parte, em inglês ou no idioma local).
+- highlights: de 3 a 6 coisas para ver ou reparar DENTRO do próprio lugar (partes, obras, salas, estátuas, detalhes; nunca outros pontos turísticos vizinhos), só as que aparecem no texto${inp.image ? " ou estão claramente visíveis na foto" : ""}. Cada uma com name (curto), desc (1 ou 2 frases) e photo_query (2 a 4 palavras para achar uma foto daquela parte na Wikimedia Commons: nome curto do lugar + a parte em inglês, ex.: "Selaron steps tiles", "Zu Lai Buddha").
 - curiosities: 2 a 4 curiosidades curtas tiradas do texto.
 - tips: 2 a 4 dicas práticas de visita (melhor horário, como chegar, cuidados, o que combinar por perto). Podem ser conhecimento geral; sem preços nem horários exatos.
 - spoken: versão para ser LIDA EM VOZ ALTA pelo celular, 120 a 220 palavras, em primeira pessoa como guia ("Olha só, essa é a …"), frases curtas, sem parênteses e sem siglas soltas.`,
   ].join("\n\n");
-  return await gemini([...imagePart(inp), { text: prompt }], NARRATE, 0.6, 40000);
+  return await gemini([...imagePart(inp), { text: prompt }], NARRATE, 0.6, 40000, WRITE_MODELS);
 }
 
 export async function photosFor(highlights: { name: string; photo_query: string }[], src: Page | null, name: string) {
