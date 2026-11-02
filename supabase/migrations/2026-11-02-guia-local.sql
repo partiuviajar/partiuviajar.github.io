@@ -6,7 +6,7 @@
 -- banco ainda sem multiusuário: "conta ativa" = o dono do app (a migração de multiusuário substitui esta função)
 do $$ begin
   if to_regprocedure('public.is_active()') is null then
-    execute 'create function public.is_active() returns boolean language sql stable security definer set search_path = '' as $f$ select public.is_owner() $f$';
+    execute 'create function public.is_active() returns boolean language sql stable security definer set search_path = '''' as $f$ select public.is_owner() $f$';
   end if;
 end $$;
 
