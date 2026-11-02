@@ -3,7 +3,8 @@
 
 const UA = "partiuviajar/1.0 (https://partiuviajar.github.io)";
 // mesmos modelos do robô (bot/ai.py): no plano grátis um deles às vezes responde "alta demanda"
-const MODELS = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+// (o leve logo em 2º: quando os maiores travam, ele costuma responder em 3–5 s)
+const MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
 // para escrever a história o modelo leve basta e responde bem mais rápido (reconhecer a foto fica com os maiores)
 const WRITE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"];
 const MAX_EXTRACT = 14000;
@@ -137,16 +138,21 @@ async function highlightPhoto(h: { name: string; photo_query: string }, place: s
 // ---------------------------------------------------------------------------
 // Gemini
 // ---------------------------------------------------------------------------
-async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, timeout = 25000, models = MODELS) {
+// Às vezes um modelo do plano grátis não responde (fica calado até estourar o tempo). Por isso, se o modelo
+// da vez não responder em HEDGE_MS, o próximo começa junto, e vale a primeira resposta boa.
+const HEDGE_MS = 6000;
+async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, timeout = 20000, models = MODELS) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("GEMINI_API_KEY não configurada");
   const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature } });
-  let last: unknown;
-  for (const model of models) {
+  const stop = new AbortController();
+  const errors: string[] = [];
+  const call = async (model: string) => {
     const t0 = Date.now();
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(timeout),
+        method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body,
+        signal: AbortSignal.any([stop.signal, AbortSignal.timeout(timeout)]),
       });
       const d = await r.json();
       if (!d.candidates) throw new Error(String(d.error?.message || JSON.stringify(d)).slice(0, 160));
@@ -154,11 +160,30 @@ async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, time
       warn(`[gemini] ${model}: ok em ${Date.now() - t0} ms`);
       return { ...out, _model: model };
     } catch (e) {
-      last = e;
-      warn(`[gemini] ${model}: falhou em ${Date.now() - t0} ms: ${String(e).slice(0, 140)}`);
+      if (!stop.signal.aborted) warn(`[gemini] ${model}: falhou em ${Date.now() - t0} ms: ${String(e).slice(0, 140)}`);
+      errors.push(String(e));
+      throw e;
     }
-  }
-  throw new Error(`A IA está sobrecarregada agora. Tente de novo em alguns instantes. (${String(last).slice(0, 80)})`);
+  };
+  return await new Promise((resolve, reject) => {
+    let next = 0, running = 0, done = false, timer: number | undefined;
+    const launch = () => {
+      clearTimeout(timer);
+      if (done || next >= models.length) return;
+      running++;
+      call(models[next++]).then((out) => {
+        if (done) return;
+        done = true; clearTimeout(timer); stop.abort(); resolve(out);
+      }, () => {
+        running--;
+        if (done) return;
+        if (next < models.length) launch();
+        else if (!running) reject(new Error(`A IA está sobrecarregada agora. Tente de novo em alguns instantes. (${(errors.at(-1) || "").slice(0, 80)})`));
+      });
+      timer = setTimeout(launch, HEDGE_MS);
+    };
+    launch();
+  });
 }
 
 // pesquisa no Google pelo Gemini, para lugares com pouco texto na Wikipédia (o que tem lá dentro, obras, salas…)
@@ -271,7 +296,7 @@ export async function narrate(inp: Input, src: Page | null, name: string, geo: A
 - tips: 2 a 4 dicas práticas de visita (melhor horário, como chegar, cuidados, o que combinar por perto). Podem ser conhecimento geral; sem preços nem horários exatos.
 - spoken: versão para ser LIDA EM VOZ ALTA pelo celular, 120 a 220 palavras, em primeira pessoa como guia ("Olha só, essa é a …"), frases curtas, sem parênteses e sem siglas soltas.`,
   ].join("\n\n");
-  return await gemini([...imagePart(inp), { text: prompt }], NARRATE, 0.6, 40000, WRITE_MODELS);
+  return await gemini([...imagePart(inp), { text: prompt }], NARRATE, 0.6, 30000, WRITE_MODELS);
 }
 
 export async function photosFor(highlights: { name: string; photo_query: string }[], src: Page | null, name: string) {

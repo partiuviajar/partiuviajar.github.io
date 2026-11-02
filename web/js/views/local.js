@@ -70,7 +70,12 @@ async function runGuide(payload, preview = "") {
     <span class="spinner"></span><p class="b" data-step>${STEPS[payload.image ? 0 : 1]}</p><p class="xs muted">Leva alguns segundos</p></div>`;
   document.body.append(ov);
   let i = payload.image ? 0 : 1;
-  const tick = setInterval(() => { i = Math.min(STEPS.length - 1, i + 1); ov.querySelector("[data-step]").textContent = STEPS[i]; }, 2600);
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    i = Math.min(STEPS.length - 1, i + 1);
+    ov.querySelector("[data-step]").textContent = STEPS[i];
+    if (Date.now() - t0 > 20000) ov.querySelector(".xs").textContent = "A IA do Google está mais lenta agora, mas continuo tentando…";
+  }, 2600);
   const { image, ...rest } = payload;
   lstate.last = rest;
   try {
