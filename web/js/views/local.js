@@ -248,7 +248,8 @@ export async function viewLocalPlace(raw) {
         <div class="scroller" id="lg-more-list">${Array.from({ length: 3 }, () => `<div class="related skeleton"></div>`).join("")}</div></div>` : ""}
 
       ${!unsure && alts.length ? `<section class="card pad"><h3 class="b sm">Não era esse lugar?</h3>${altChips}</section>` : ""}
-      <p class="tiny muted center">Texto escrito por IA${g.wiki ? " a partir da Wikipédia" : ""}. Confira informações importantes (horários, preços) antes de ir.</p>
+      <p class="tiny muted center">Texto escrito por IA${g.wiki ? " a partir da Wikipédia" : ""}${g.sources?.length ? " e de uma pesquisa na web" : ""}. Confira informações importantes (horários, preços) antes de ir.</p>
+      ${g.sources?.length ? `<p class="tiny muted center">Fontes: ${g.sources.map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener" style="text-decoration:underline">${esc(x.title || "site")}</a>`).join(" · ")}</p>` : ""}
     </main>
   </div>`;
 }

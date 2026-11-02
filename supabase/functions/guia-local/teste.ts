@@ -17,8 +17,8 @@ note("1 identificação", `${((Date.now() - t0) / 1000).toFixed(1)} s · onde: $
 if (!id.found) Deno.exit(0);
 const src = await findPage(id);
 note("2 fonte", src ? `${src.lang}:${src.title} · ${src.extract.length} letras · ${src.url}${src.more ? ` · +${src.more.length} letras do outro idioma` : ""}${src.web ? `\nWEB: ${src.web.sources.map((x: any) => x.title).join(", ")}\n${src.web.text.slice(0, 1500)}` : ""}` : "sem fonte");
-const g = await buildGuide(inp, src, id.name, geo);
+const g: any = await buildGuide(inp, src, id.name, geo);
 note("3 guia", `${((Date.now() - t0) / 1000).toFixed(1)} s · ${g.model}\n${g.title} — ${g.subtitle}\n${g.intro}\n\n${g.story}`);
-note("4 destaques", g.highlights.map((h: any) => `• ${h.name}: ${h.desc} [foto: ${h.photo?.url || "nenhuma"}]`).join("\n") + `\n\nGaleria: ${g.gallery.length} fotos · capa: ${g.photo?.url}`);
+note("4 destaques", g.highlights.map((h: any) => `• ${h.name} («${h.q}»): ${h.desc} [foto: ${h.photo?.page || "nenhuma"}]`).join("\n") + `\n\nGaleria: ${g.gallery.length} fotos · capa: ${g.photo?.url}`);
 note("5 curiosidades e dicas", [...g.curiosities.map((c: string) => "★ " + c), ...g.tips.map((t: string) => "→ " + t)].join("\n"));
 note("6 falado", g.spoken);

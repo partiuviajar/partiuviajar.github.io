@@ -246,7 +246,8 @@ export async function findPage(id: { name?: string; wiki_pt?: string; wiki_en?: 
     const o = await page(src.lang === "pt" ? "en" : "pt", src.other);
     if (o) src.more = o.extract.slice(0, MAX_EXTRACT - src.extract.length);
   }
-  if (src && src.extract.length + (src.more?.length || 0) < SHORT_EXTRACT) src.web = await webFacts(src.title, src.description || "");
+  // a pesquisa no Google não entra no plano grátis do Gemini: ligue com o segredo GUIA_PESQUISA_WEB=1 se tiver plano pago
+  if (Deno.env.get("GUIA_PESQUISA_WEB") === "1" && src && src.extract.length + (src.more?.length || 0) < SHORT_EXTRACT) src.web = await webFacts(src.title, src.description || "");
   return src;
 }
 
@@ -263,7 +264,7 @@ export async function narrate(inp: Input, src: Page | null, name: string, geo: A
 - intro: uma frase de abertura, tipo "Você está diante da …".
 - Em todos os campos escreva datas e números com algarismos (1990, 215 degraus).
 - story: 3 a 5 parágrafos curtos separados por linha em branco (150 a 300 palavras no total): o que é, quem fez e quando, por que é importante, como é hoje.
-- highlights: de 3 a 6 coisas para ver ou reparar DENTRO do próprio lugar (partes, obras, salas, estátuas, detalhes; nunca outros pontos turísticos vizinhos), só as que aparecem no texto${inp.image ? " ou estão claramente visíveis na foto" : ""}. Cada uma com name (curto), desc (1 ou 2 frases) e photo_query (2 a 4 palavras para achar uma foto daquela parte na Wikimedia Commons: nome curto do lugar + a parte em inglês, ex.: "Selaron steps tiles", "Zu Lai Buddha").
+- highlights: até 6 coisas concretas para ver ou reparar DENTRO do próprio lugar (partes, obras, salas, estátuas, portões, detalhes; nunca outros pontos turísticos vizinhos, nunca números como área ou tamanho do terreno), só as que aparecem no texto${inp.image ? " ou estão claramente visíveis na foto" : ""}. Se não houver nada concreto, devolva menos itens ou nenhum. Cada uma com name (curto), desc (1 ou 2 frases) e photo_query (2 a 4 palavras para achar uma foto daquela parte na Wikimedia Commons: nome curto do lugar + a parte em inglês, ex.: "Selaron steps tiles", "Zu Lai Buddha").
 - curiosities: 2 a 4 curiosidades curtas tiradas do texto.
 - tips: 2 a 4 dicas práticas de visita (melhor horário, como chegar, cuidados, o que combinar por perto). Podem ser conhecimento geral; sem preços nem horários exatos.
 - spoken: versão para ser LIDA EM VOZ ALTA pelo celular, 120 a 220 palavras, em primeira pessoa como guia ("Olha só, essa é a …"), frases curtas, sem parênteses e sem siglas soltas.`,
@@ -298,7 +299,7 @@ export async function buildGuide(inp: Input, src: Page | null, name: string, geo
     title: n.title || src?.title || name,
     subtitle: n.subtitle || geo?.label || "",
     intro: n.intro, story: n.story, spoken: n.spoken,
-    highlights: (n.highlights || []).slice(0, 6).map((h: any, i: number) => ({ name: h.name, desc: h.desc, photo: hl[i] })),
+    highlights: (n.highlights || []).slice(0, 6).map((h: any, i: number) => ({ name: h.name, desc: h.desc, q: h.photo_query, photo: hl[i] })),
     curiosities: n.curiosities || [], tips: n.tips || [],
     photo: hero,
     gallery: gallery.filter((g) => g.url !== hero?.url).slice(0, 10),
