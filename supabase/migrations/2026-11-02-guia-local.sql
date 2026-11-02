@@ -3,6 +3,13 @@
 -- local_visits: o histórico de cada pessoa ("Seus lugares").
 -- Cole no SQL Editor do Supabase e clique em Run. Pode rodar de novo sem problema.
 
+-- banco ainda sem multiusuário: "conta ativa" = o dono do app (a migração de multiusuário substitui esta função)
+do $$ begin
+  if to_regprocedure('public.is_active()') is null then
+    execute 'create function public.is_active() returns boolean language sql stable security definer set search_path = '' as $f$ select public.is_owner() $f$';
+  end if;
+end $$;
+
 create table if not exists public.local_places (
   key text primary key,               -- "pt:Escadaria Selarón" (idioma:título da Wikipédia)
   title text not null,
