@@ -6,6 +6,7 @@ import { viewRoutes, viewRoute, viewForm, viewExplore } from "./js/views/routes.
 import { viewGuideIndex, viewGuide } from "./js/views/guide.js";
 import { viewStay, viewHotels } from "./js/views/stay.js";
 import { viewAlerts, viewSettings, viewLogin, viewFavorites } from "./js/views/misc.js";
+import { viewLocal, viewLocalPlace, viewLocalNearby } from "./js/views/local.js";
 import { viewCopilot, viewCopilotForm, viewCopilotResult } from "./js/views/copilot.js";
 import { loadProfile, loadUsage, gateScreen, upgradeFab, openUpgrade, handleLimitError, viewPlans, viewAdmin, isAdmin } from "./js/plans.js";
 
@@ -24,6 +25,9 @@ const ROUTES = [
   [/^#\/guide$/, viewGuideIndex],
   [/^#\/guide\/([A-Z0-9]{3})$/, viewGuide],
   [/^#\/destino\/([A-Z0-9]{3})$/, viewGuide],   // endereço antigo
+  [/^#\/local$/, viewLocal],
+  [/^#\/lugar\/(.+)$/, viewLocalPlace],
+  [/^#\/perto$/, viewLocalNearby],
   [/^#\/hospedagem$/, viewStay],
   [/^#\/viagem$/, viewStay],                     // endereço antigo
   [/^#\/hoteis\/([\w-]+)$/, viewHotels],
@@ -41,7 +45,7 @@ const TABS = [
   ["#/", "Home", "house", (h) => h === "#/" || h === "#"],
   ["#/rotas", "Rotas", "plane", (h) => /^#\/(rota|nova|editar|explorar)/.test(h)],
   ["#/copiloto", "Copiloto", "sparkles", (h) => h.startsWith("#/copiloto")],
-  ["#/guide", "Guide", "earth", (h) => /^#\/(guide|destino)/.test(h)],
+  ["#/guide", "Guide", "earth", (h) => /^#\/(guide|destino|local|lugar|perto)/.test(h)],
   ["#/hospedagem", "Hospedagem", "bed-double", (h) => /^#\/(hospedagem|hoteis|viagem)/.test(h)],
 ];
 

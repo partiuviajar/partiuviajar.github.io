@@ -42,7 +42,7 @@ export async function viewAlerts() {
 // Favoritos: guias, experiências e hospedagens salvos com o coração
 // ---------------------------------------------------------------------------
 let favTab = "guide";
-const FAV_TABS = [["guide", "🧭 Guias"], ["tour", "🎟️ Experiências"], ["hotel", "🏨 Hospedagens"]];
+const FAV_TABS = [["guide", "🧭 Guias"], ["local", "📸 Lugares"], ["tour", "🎟️ Experiências"], ["hotel", "🏨 Hospedagens"]];
 
 export async function viewFavorites() {
   await loadFavs(true);
@@ -55,12 +55,12 @@ export async function viewFavorites() {
 viewFavorites.after = () => {
   const draw = () => {
     const list = favs.rows.filter((r) => r.kind === favTab);
-    const empty = { guide: "Abra um guia no Guide e toque no ❤️ ao lado do nome da cidade.", tour: "Nos guias, toque no ❤️ de um passeio para guardar aqui.", hotel: "Na busca de hotéis, toque no ❤️ da foto do hotel para guardar aqui." }[favTab];
+    const empty = { guide: "Abra um guia no Guide e toque no ❤️ ao lado do nome da cidade.", local: "No Guia Local, toque no ❤️ de um lugar para guardar aqui.", tour: "Nos guias, toque no ❤️ de um passeio para guardar aqui.", hotel: "Na busca de hotéis, toque no ❤️ da foto do hotel para guardar aqui." }[favTab];
     document.getElementById("fav-list").innerHTML = list.length ? list.map((f, i) => {
       const external = /^https?:/.test(f.link || "");
       return `<div class="card pad-s row fade-up rel" style="gap:12px;margin-top:${i ? 12 : 0}px;animation-delay:${i * 50}ms">
         <a class="row grow" style="gap:12px" href="${esc(f.link || "#/")}" ${external ? 'target="_blank" rel="noopener"' : ""}>
-          <span class="emoji-tile" ${bg(f.photo)}>${f.photo ? "" : favTab === "guide" ? "🧭" : favTab === "tour" ? "🎟️" : "🏨"}</span>
+          <span class="emoji-tile" ${bg(f.photo)}>${f.photo ? "" : favTab === "guide" ? "🧭" : favTab === "local" ? "📸" : favTab === "tour" ? "🎟️" : "🏨"}</span>
           <span class="grow"><p class="b" style="line-height:1.25">${esc(f.title)}</p>${f.subtitle ? `<p class="xs muted">${esc(f.subtitle)}</p>` : ""}<p class="tiny muted">salvo ${ago(f.created_at)}${external ? " · abre no site ↗" : ""}</p></span>
         </a>
         ${favBtn(f.kind, f.key, { title: f.title, subtitle: f.subtitle, photo: f.photo, link: f.link })}

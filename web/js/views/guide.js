@@ -32,6 +32,8 @@ export async function viewGuideIndex() {
   return `<main class="page">
     <div class="page-title center"><h1>Para onde vamos?</h1><p>Gire o globo, toque num destino ou busque qualquer cidade</p></div>
     ${requests.length ? `<div class="city-chips">${requests.map((r) => `<a class="row" style="gap:6px" href="#/guide/${esc(r.code)}?nome=${encodeURIComponent(r.name || r.code)}">${r.status === "done" ? "✅" : r.status === "error" ? "⚠️" : "⏳"} ${esc(r.name || r.code)}</a>`).join("")}<a href="#/favoritos">❤️ Favoritos</a></div>` : `<div class="city-chips"><a href="#/favoritos">❤️ Seus favoritos</a></div>`}
+    <a class="card lg-banner pressable" href="#/local"><span class="lg-banner-ic bg-brand">${icon("camera", 22)}</span>
+      <span class="grow"><p class="b">📸 Guia Local</p><p class="xs muted">Tire uma foto de um lugar e descubra a história dele</p></span>${icon("chevron-right", 18)}</a>
     <div class="globe-wrap"><canvas id="globe"></canvas><div id="globe-card"></div></div>
     <div class="city-chips" id="city-chips">${chips.map((d) => `<button type="button" class="pressable" data-c="${esc(d.code)}">${flag(d.country_code)} ${esc(d.name)}</button>`).join("")}</div>
     <div class="search">${icon("search", 20)}<input id="g-search" type="search" autocomplete="off" placeholder="Buscar cidade ou país (ex.: Lisboa, Chile)"><button class="clear" id="g-clear" hidden aria-label="Limpar">${icon("x", 20)}</button>
