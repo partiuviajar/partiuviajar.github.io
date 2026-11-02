@@ -24,7 +24,7 @@ export type Input = {
 
 export type Photo = { url: string; page?: string; credit?: string };
 
-type Page = { lang: string; title: string; extract: string; url: string; image?: string; lat?: number; lon?: number; description?: string; other?: string; more?: string };
+type Page = { lang: string; title: string; extract: string; url: string; image?: string; lat?: number; lon?: number; description?: string; other?: string; more?: string; web?: { text: string; sources: { title: string; url: string }[] } | null };
 const SHORT_EXTRACT = 6000;
 
 async function getJson(url: string, timeout = 15000) {
@@ -159,6 +159,31 @@ async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, time
   throw new Error(`A IA está sobrecarregada agora. Tente de novo em alguns instantes. (${String(last).slice(0, 80)})`);
 }
 
+// pesquisa no Google pelo Gemini, para lugares com pouco texto na Wikipédia (o que tem lá dentro, obras, salas…)
+export async function webFacts(name: string, where: string) {
+  const key = Deno.env.get("GEMINI_API_KEY");
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: `Pesquise e liste, em português, fatos concretos e verificáveis sobre "${name}"${where ? ` (${where})` : ""}: história, quem construiu e quando, e principalmente o que o visitante encontra lá (salas, estátuas, obras, portões, detalhes, com tamanhos e materiais quando houver). Só fatos que estejam nas fontes, em tópicos curtos.` }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: { temperature: 0.2 },
+  });
+  for (const model of WRITE_MODELS) {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST", headers: { "x-goog-api-key": key!, "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(25000),
+      });
+      const d = await r.json();
+      const c = d.candidates?.[0];
+      if (!c) throw new Error(String(d.error?.message || JSON.stringify(d)).slice(0, 160));
+      const text = (c.content?.parts || []).map((p: any) => p.text || "").join("").trim();
+      const sources = (c.groundingMetadata?.groundingChunks || []).map((g: any) => ({ title: g.web?.title, url: g.web?.uri })).filter((x: any) => x.url).slice(0, 6);
+      if (text && sources.length) return { text: text.slice(0, 8000), sources };
+      return null;  // sem fonte da web: não serve
+    } catch (e) { warn(`[pesquisa] ${model}: ${String(e).slice(0, 160)}`); }
+  }
+  return null;
+}
+
 const S = (description = "") => ({ type: "string", description });
 const IDENTIFY = {
   type: "object",
@@ -221,6 +246,7 @@ export async function findPage(id: { name?: string; wiki_pt?: string; wiki_en?: 
     const o = await page(src.lang === "pt" ? "en" : "pt", src.other);
     if (o) src.more = o.extract.slice(0, MAX_EXTRACT - src.extract.length);
   }
+  if (src && src.extract.length + (src.more?.length || 0) < SHORT_EXTRACT) src.web = await webFacts(src.title, src.description || "");
   return src;
 }
 
@@ -229,7 +255,7 @@ export async function narrate(inp: Input, src: Page | null, name: string, geo: A
     `Você é um guia local simpático e apaixonado pela sua cidade, falando com um turista brasileiro que está na frente de "${src?.title || name}"${geo?.label ? ` (a pessoa está em ${geo.label})` : ""}.`,
     "Escreva em português do Brasil, em tom de conversa, como quem está falando ao vivo. Sem markdown, sem emojis, sem listas dentro do texto corrido.",
     src
-      ? `Use SOMENTE os fatos do texto de referência abaixo (Wikipédia, ${src.lang === "pt" ? "em português" : "em inglês: traduza"}) para datas, nomes, números, autores e história. O que não estiver no texto, NÃO afirme. Não invente datas.\n\nTEXTO DE REFERÊNCIA — ${src.title}:\n${src.extract}${src.more ? `\n\nMESMO ARTIGO NA WIKIPÉDIA EM ${src.lang === "pt" ? "INGLÊS (traduza)" : "PORTUGUÊS"}:\n${src.more}` : ""}`
+      ? `Use SOMENTE os fatos do texto de referência abaixo (Wikipédia, ${src.lang === "pt" ? "em português" : "em inglês: traduza"}) para datas, nomes, números, autores e história. O que não estiver no texto, NÃO afirme. Não invente datas.\n\nTEXTO DE REFERÊNCIA — ${src.title}:\n${src.extract}${src.more ? `\n\nMESMO ARTIGO NA WIKIPÉDIA EM ${src.lang === "pt" ? "INGLÊS (traduza)" : "PORTUGUÊS"}:\n${src.more}` : ""}${src.web ? `\n\nPESQUISA NA WEB (também vale como referência):\n${src.web.text}` : ""}`
       : "ATENÇÃO: não achamos nenhum texto de referência sobre esse lugar. Descreva com cautela apenas o que se vê ou o que é de conhecimento muito geral, sem datas, nomes ou números específicos, e diga claramente que não encontrou registros confiáveis sobre a história dele.",
     `Campos:
 - title: nome do lugar.
@@ -278,6 +304,7 @@ export async function buildGuide(inp: Input, src: Page | null, name: string, geo
     gallery: gallery.filter((g) => g.url !== hero?.url).slice(0, 10),
     place: src?.lat != null ? { lat: src.lat, lon: src.lon } : inp.image && inp.lat != null ? { lat: inp.lat, lon: inp.lon } : null,
     wiki: src ? { url: src.url, lang: src.lang, title: src.title } : null,
+    sources: src?.web?.sources || [],
     sourced: !!src,
     model: n._model,
     created_at: new Date().toISOString(),

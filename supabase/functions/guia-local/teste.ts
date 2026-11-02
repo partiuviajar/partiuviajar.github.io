@@ -16,7 +16,7 @@ const id = await identify(inp, geo);
 note("1 identificação", `${((Date.now() - t0) / 1000).toFixed(1)} s · onde: ${geo?.label} · ${JSON.stringify({ ...id, near: id.near.slice(0, 5).map((p: any) => p.title) })}`);
 if (!id.found) Deno.exit(0);
 const src = await findPage(id);
-note("2 fonte", src ? `${src.lang}:${src.title} · ${src.extract.length} letras · ${src.url}` : "sem fonte");
+note("2 fonte", src ? `${src.lang}:${src.title} · ${src.extract.length} letras · ${src.url}${src.more ? ` · +${src.more.length} letras do outro idioma` : ""}${src.web ? `\nWEB: ${src.web.sources.map((x: any) => x.title).join(", ")}\n${src.web.text.slice(0, 1500)}` : ""}` : "sem fonte");
 const g = await buildGuide(inp, src, id.name, geo);
 note("3 guia", `${((Date.now() - t0) / 1000).toFixed(1)} s · ${g.model}\n${g.title} — ${g.subtitle}\n${g.intro}\n\n${g.story}`);
 note("4 destaques", g.highlights.map((h: any) => `• ${h.name}: ${h.desc} [foto: ${h.photo?.url || "nenhuma"}]`).join("\n") + `\n\nGaleria: ${g.gallery.length} fotos · capa: ${g.photo?.url}`);
