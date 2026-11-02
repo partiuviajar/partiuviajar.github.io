@@ -22,8 +22,8 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          supabase secrets set --project-ref "$PROJECT" GEMINI_API_KEY="$GEMINI_API_KEY" > out.txt 2>&1 || { echo "::error title=secrets::$(tail -c 600 out.txt | tr '\n' ' ')"; exit 1; }
+          supabase secrets set --yes --project-ref "$PROJECT" GEMINI_API_KEY="$GEMINI_API_KEY" > out.txt 2>&1 || { echo "::error title=secrets::$(tail -c 600 out.txt | tr '\n' ' ')"; exit 1; }
       - name: Guia Local
         run: |
-          supabase functions deploy guia-local --project-ref "$PROJECT" --no-verify-jwt --use-api > out.txt 2>&1 || { echo "::error title=deploy::$(tail -c 900 out.txt | tr '\n' ' ')"; exit 1; }
+          supabase functions deploy guia-local --yes --project-ref "$PROJECT" --no-verify-jwt --use-api > out.txt 2>&1 || { echo "::error title=deploy::$(tail -c 900 out.txt | tr '\n' ' ')"; exit 1; }
           echo "::notice title=deploy::$(tail -c 300 out.txt | tr '\n' ' ')"
