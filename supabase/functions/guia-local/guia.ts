@@ -5,6 +5,8 @@ const UA = "partiuviajar/1.0 (https://partiuviajar.github.io)";
 // mesmos modelos do robô (bot/ai.py): no plano grátis um deles às vezes responde "alta demanda"
 const MODELS = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 const MAX_EXTRACT = 14000;
+// no teste do GitHub os avisos viram anotações (o log da execução não abre deste Mac)
+export const warn = (msg: string) => console.log(Deno.env.get("GITHUB_ACTIONS") ? `::warning::${msg}` : msg);
 
 export type Input = {
   image?: string;        // foto em base64 (sem o prefixo data:)
@@ -66,7 +68,7 @@ export async function nearby(lang: string, lat: number, lon: number, radius = 10
       lat: p.coordinates?.[0]?.lat, lon: p.coordinates?.[0]?.lon,
       dist: p.coordinates?.[0] ? distanceM([lat, lon], [p.coordinates[0].lat, p.coordinates[0].lon]) : null,
     })).sort((a: any, b: any) => (a.dist ?? 1e9) - (b.dist ?? 1e9));
-  } catch { return []; }
+  } catch (e) { warn(`[perto] ${e}`); return []; }
 }
 
 async function search(lang: string, term: string, limit = 5) {
@@ -108,26 +110,30 @@ async function pagePhotos(lang: string, title: string, max = 8): Promise<Photo[]
   } catch { return []; }
 }
 
-// uma foto da Wikimedia Commons para cada destaque ("Buda de 3 m", "portão principal"…)
-async function commonsPhoto(term: string): Promise<Photo | null> {
+// fotos da Wikimedia Commons ("Templo Zu Lai Buddha", "Escadaria Selarón tiles"…)
+async function commons(term: string, limit = 3): Promise<Photo[]> {
   try {
     const j = await getJson("https://commons.wikimedia.org/w/api.php?" + new URLSearchParams({
       action: "query", format: "json", formatversion: "2", generator: "search", gsrnamespace: "6", gsrsearch: `${term} filetype:bitmap`,
-      gsrlimit: "3", prop: "imageinfo", iiprop: "url|extmetadata", iiurlwidth: "800", iiextmetadatafilter: "Artist|LicenseShortName",
+      gsrlimit: String(limit), prop: "imageinfo", iiprop: "url|extmetadata", iiurlwidth: "960", iiextmetadatafilter: "Artist|LicenseShortName",
     }), 10000);
-    const p = (j.query?.pages || []).sort((a: any, b: any) => a.index - b.index)[0];
-    const ii = p?.imageinfo?.[0];
-    if (!ii) return null;
-    const artist = String(ii.extmetadata?.Artist?.value || "").replace(/<[^>]+>/g, "").trim();
-    const lic = ii.extmetadata?.LicenseShortName?.value || "";
-    return { url: ii.thumburl || ii.url, page: ii.descriptionurl, credit: [artist.slice(0, 60), lic].filter(Boolean).join(" · ") || "Wikimedia Commons" };
-  } catch { return null; }
+    return (j.query?.pages || []).sort((a: any, b: any) => a.index - b.index).filter((p: any) => p.imageinfo?.[0]).map((p: any) => {
+      const ii = p.imageinfo[0];
+      const artist = String(ii.extmetadata?.Artist?.value || "").replace(/<[^>]+>/g, "").trim();
+      const lic = ii.extmetadata?.LicenseShortName?.value || "";
+      return { url: ii.thumburl || ii.url, page: ii.descriptionurl, credit: [artist.slice(0, 60), lic].filter(Boolean).join(" · ") || "Wikimedia Commons" };
+    });
+  } catch { return []; }
+}
+// uma foto por destaque: primeiro a busca sugerida pela IA, depois "lugar + nome do destaque"
+async function highlightPhoto(h: { name: string; photo_query: string }, place: string) {
+  return (await commons(h.photo_query, 1))[0] || (await commons(`${place} ${h.name}`, 1))[0] || null;
 }
 
 // ---------------------------------------------------------------------------
 // Gemini
 // ---------------------------------------------------------------------------
-async function gemini(parts: unknown[], schema: unknown, temperature = 0.4) {
+async function gemini(parts: unknown[], schema: unknown, temperature = 0.4, timeout = 25000) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("GEMINI_API_KEY não configurada");
   const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature } });
@@ -135,7 +141,7 @@ async function gemini(parts: unknown[], schema: unknown, temperature = 0.4) {
   for (const model of MODELS) {
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(45000),
+        method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(timeout),
       });
       const d = await r.json();
       if (!d.candidates) throw new Error(String(d.error?.message || JSON.stringify(d)).slice(0, 160));
@@ -143,7 +149,7 @@ async function gemini(parts: unknown[], schema: unknown, temperature = 0.4) {
       return { ...out, _model: model };
     } catch (e) {
       last = e;
-      console.log(`[gemini] ${model}: ${String(e).slice(0, 120)}`);
+      warn(`[gemini] ${model}: ${String(e).slice(0, 160)}`);
     }
   }
   throw new Error(`A IA está sobrecarregada agora. Tente de novo em alguns instantes. (${String(last).slice(0, 80)})`);
@@ -219,20 +225,26 @@ export async function narrate(inp: Input, src: Page | null, name: string, geo: A
 - title: nome do lugar.
 - subtitle: "bairro · cidade" (ou "cidade · país" se for melhor).
 - intro: uma frase de abertura, tipo "Você está diante da …".
+- Em todos os campos escreva datas e números com algarismos (1990, 215 degraus).
 - story: 3 a 5 parágrafos curtos separados por linha em branco (150 a 300 palavras no total): o que é, quem fez e quando, por que é importante, como é hoje.
 - highlights: de 3 a 6 coisas para ver ou reparar ali (partes, obras, salas, estátuas, detalhes), só as que aparecem no texto${inp.image ? " ou estão claramente visíveis na foto" : ""}. Cada uma com name (curto), desc (1 ou 2 frases) e photo_query (termos para achar uma foto daquela parte na Wikimedia Commons: nome do lugar + parte, em inglês ou no idioma local).
 - curiosities: 2 a 4 curiosidades curtas tiradas do texto.
 - tips: 2 a 4 dicas práticas de visita (melhor horário, como chegar, cuidados, o que combinar por perto). Podem ser conhecimento geral; sem preços nem horários exatos.
-- spoken: versão para ser LIDA EM VOZ ALTA pelo celular, 120 a 220 palavras, em primeira pessoa como guia ("Olha só, essa é a …"), frases curtas, sem parênteses, sem abreviações.`,
+- spoken: versão para ser LIDA EM VOZ ALTA pelo celular, 120 a 220 palavras, em primeira pessoa como guia ("Olha só, essa é a …"), frases curtas, sem parênteses e sem siglas soltas.`,
   ].join("\n\n");
-  return await gemini([...imagePart(inp), { text: prompt }], NARRATE, 0.6);
+  return await gemini([...imagePart(inp), { text: prompt }], NARRATE, 0.6, 40000);
 }
 
-export async function photosFor(highlights: { photo_query: string }[], src: Page | null) {
-  const [hl, gallery] = await Promise.all([
-    Promise.all(highlights.slice(0, 6).map((h) => commonsPhoto(h.photo_query))),
+export async function photosFor(highlights: { name: string; photo_query: string }[], src: Page | null, name: string) {
+  const place = src?.title || name;
+  const [hl, own, more] = await Promise.all([
+    Promise.all(highlights.slice(0, 6).map((h) => highlightPhoto(h, place))),
     src ? pagePhotos(src.lang, src.title) : Promise.resolve([]),
+    commons(place, 10),
   ]);
+  // galeria: fotos da página + da Commons, sem repetir as dos destaques
+  const used = new Set(hl.filter(Boolean).map((p) => p!.url));
+  const gallery = [...own, ...more].filter((p) => !used.has(p.url) && used.add(p.url));
   return { hl, gallery };
 }
 
@@ -243,7 +255,7 @@ export const placeKey = (src: Page | null, name: string) => (src ? `${src.lang}:
 
 export async function buildGuide(inp: Input, src: Page | null, name: string, geo: Awaited<ReturnType<typeof whereAmI>>) {
   const n = await narrate(inp, src, name, geo);
-  const { hl, gallery } = await photosFor(n.highlights || [], src);
+  const { hl, gallery } = await photosFor(n.highlights || [], src, name);
   const hero = src?.image ? { url: src.image, page: src.url, credit: "Wikipédia" } : gallery[0] || null;
   return {
     key: placeKey(src, name),
@@ -253,7 +265,7 @@ export async function buildGuide(inp: Input, src: Page | null, name: string, geo
     highlights: (n.highlights || []).slice(0, 6).map((h: any, i: number) => ({ name: h.name, desc: h.desc, photo: hl[i] })),
     curiosities: n.curiosities || [], tips: n.tips || [],
     photo: hero,
-    gallery: gallery.filter((g) => g.url !== hero?.url).slice(0, 8),
+    gallery: gallery.filter((g) => g.url !== hero?.url).slice(0, 10),
     place: src?.lat != null ? { lat: src.lat, lon: src.lon } : inp.image && inp.lat != null ? { lat: inp.lat, lon: inp.lon } : null,
     wiki: src ? { url: src.url, lang: src.lang, title: src.title } : null,
     sourced: !!src,
