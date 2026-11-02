@@ -1,0 +1,23 @@
+name: Publicar funções do Supabase
+
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/functions/**", ".github/workflows/funcoes.yml"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT: zukcutypxxpxbioxupss
+    steps:
+      - uses: actions/checkout@v5
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Chave do Gemini
+        run: supabase secrets set --project-ref "$PROJECT" GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+      - name: Guia Local
+        run: supabase functions deploy guia-local --project-ref "$PROJECT" --no-verify-jwt --use-api

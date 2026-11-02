@@ -1,0 +1,32 @@
+name: Testar Guia Local
+
+# Roda o guia com a chave do Gemini e mostra o resultado nas anotações da execução.
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: Nome do lugar (vazio para testar com foto)
+        default: ""
+      image:
+        description: Link de uma foto (opcional)
+        default: ""
+      lat:
+        default: ""
+      lon:
+        default: ""
+
+jobs:
+  teste:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          Q: ${{ inputs.query }}
+          IMG: ${{ inputs.image }}
+          LAT: ${{ inputs.lat }}
+          LON: ${{ inputs.lon }}
+        run: deno run -A supabase/functions/guia-local/teste.ts "$Q" "$IMG" "$LAT" "$LON"
